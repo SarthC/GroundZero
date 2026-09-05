@@ -1,0 +1,46 @@
+import { useEffect, useState } from "react";
+import { fetchStats } from "../api";
+import { Droplets, AlertTriangle, MapPin, Activity } from "lucide-react";
+
+const STAT_CARDS = [
+  { key: "total_wells", label: "Total Wells", icon: MapPin, bg: "#FAFAFA" },
+  { key: "high_risk", label: "High Risk", icon: AlertTriangle, bg: "#FF3333" },
+  { key: "moderate_risk", label: "Moderate Risk", icon: Activity, bg: "#FFE600" },
+  { key: "avg_wqi", label: "Avg WQI", icon: Droplets, bg: "#00D4FF" },
+  { key: "states_covered", label: "States", icon: MapPin, bg: "#AEFF00" },
+  { key: "districts_covered", label: "Districts", icon: MapPin, bg: "#FF6EC7" },
+];
+
+export default function StatsBar() {
+  const [stats, setStats] = useState({});
+
+  useEffect(() => {
+    fetchStats()
+      .then((res) => setStats(res.data))
+      .catch(console.error);
+  }, []);
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      {STAT_CARDS.map(({ key, label, icon: Icon, bg }) => (
+        <div
+          key={key}
+          className="border-4 border-black p-4 flex flex-col items-center text-center transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_rgba(0,0,0,1)]"
+          style={{
+            backgroundColor: bg,
+            boxShadow: "6px 6px 0px rgba(0,0,0,1)",
+            color: key === "high_risk" ? "#fff" : "#000",
+          }}
+        >
+          <Icon size={22} strokeWidth={3} />
+          <span className="text-2xl font-bold mono mt-1">
+            {stats[key] !== undefined ? stats[key].toLocaleString() : "—"}
+          </span>
+          <span className="text-xs font-bold uppercase tracking-wider mt-1">
+            {label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}

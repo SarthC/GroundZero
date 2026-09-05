@@ -1,0 +1,179 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base Resets ─── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Space Grotesk', sans-serif;
+  background-color: #F0F0F0;
+  color: #000;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+code, pre, .mono {
+  font-family: 'Space Mono', monospace;
+}
+
+/* ─── Neubrutalist Component Classes ─── */
+@layer components {
+  .neu-card {
+    @apply bg-white border-4 border-black p-5 relative shadow-neu;
+  }
+
+  .neu-card-sm {
+    @apply bg-white border-3 border-black p-3 relative shadow-neu-sm;
+  }
+
+  .neu-card-yellow {
+    @apply border-4 border-black p-5 relative shadow-neu bg-neu-yellow;
+  }
+
+  .neu-card-green {
+    @apply border-4 border-black p-5 relative shadow-neu bg-neu-green;
+  }
+
+  .neu-card-pink {
+    @apply border-4 border-black p-5 relative shadow-neu bg-neu-pink;
+  }
+
+  .neu-card-blue {
+    @apply border-4 border-black p-5 relative shadow-neu bg-neu-blue;
+  }
+
+  .neu-btn {
+    @apply inline-flex items-center px-6 py-3 font-bold text-black border-4 border-black cursor-pointer uppercase tracking-wider text-sm transition-all bg-neu-yellow shadow-neu-sm;
+  }
+  .neu-btn:hover {
+    @apply shadow-neu-hover translate-x-[2px] translate-y-[2px];
+  }
+  .neu-btn:active {
+    @apply shadow-none translate-x-1 translate-y-1;
+  }
+
+  .neu-btn-red {
+    @apply inline-flex items-center px-6 py-3 font-bold text-black border-4 border-black cursor-pointer uppercase tracking-wider text-sm transition-all bg-neu-red shadow-neu-sm;
+  }
+  .neu-btn-red:hover {
+    @apply shadow-neu-hover translate-x-[2px] translate-y-[2px];
+  }
+
+  .neu-btn-green {
+    @apply inline-flex items-center px-6 py-3 font-bold text-black border-4 border-black cursor-pointer uppercase tracking-wider text-sm transition-all bg-neu-green shadow-neu-sm;
+  }
+  .neu-btn-green:hover {
+    @apply shadow-neu-hover translate-x-[2px] translate-y-[2px];
+  }
+
+  .neu-input {
+    @apply w-full px-4 py-3 text-base font-medium text-black bg-white border-4 border-black outline-none shadow-neu-sm;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+  .neu-input:focus {
+    @apply shadow-neu-hover translate-x-[2px] translate-y-[2px];
+  }
+
+  .neu-select {
+    @apply px-4 py-2 text-sm font-bold text-black bg-white border-3 border-black outline-none cursor-pointer shadow-neu-sm;
+    font-family: 'Space Grotesk', sans-serif;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 36px;
+  }
+
+  .neu-badge {
+    @apply inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black;
+    box-shadow: 2px 2px 0px rgba(0, 0, 0, 1);
+  }
+
+  .neu-badge-green {
+    @apply inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black bg-neu-green;
+    box-shadow: 2px 2px 0px rgba(0, 0, 0, 1);
+  }
+
+  .neu-badge-yellow {
+    @apply inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black bg-neu-yellow;
+    box-shadow: 2px 2px 0px rgba(0, 0, 0, 1);
+  }
+
+  .neu-badge-red {
+    @apply inline-block px-3 py-1 text-xs font-bold uppercase border-2 border-black bg-neu-red text-white;
+    box-shadow: 2px 2px 0px rgba(0, 0, 0, 1);
+  }
+
+  .section-title {
+    @apply text-2xl font-bold uppercase tracking-wider mb-4;
+    letter-spacing: 0.05em;
+  }
+}
+
+/* ─── Leaflet Overrides ─── */
+.leaflet-popup-content-wrapper {
+  border: 4px solid black !important;
+  border-radius: 0 !important;
+  box-shadow: 6px 6px 0px rgba(0, 0, 0, 1) !important;
+  padding: 0 !important;
+}
+
+.leaflet-popup-tip {
+  border: 2px solid black !important;
+  box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.3) !important;
+}
+
+.leaflet-container {
+  border: 4px solid black;
+  box-shadow: 8px 8px 0px rgba(0, 0, 0, 1);
+  font-family: 'Space Grotesk', sans-serif !important;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #F0F0F0;
+  border-left: 3px solid black;
+}
+::-webkit-scrollbar-thumb {
+  background: black;
+}
+
+/* ─── Recharts override ─── */
+.recharts-cartesian-axis-tick-value {
+  font-family: 'Space Mono', monospace !important;
+  font-size: 11px !important;
+}
+
+/* ─── Animations ─── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 8px 8px 0px rgba(0, 0, 0, 1); }
+  50% { box-shadow: 12px 12px 0px rgba(0, 0, 0, 1); }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
