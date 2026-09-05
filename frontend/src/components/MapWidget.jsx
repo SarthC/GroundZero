@@ -3,9 +3,9 @@ import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaf
 import "leaflet/dist/leaflet.css";
 
 const RISK_COLORS = {
-  green: "#00CC66",
-  yellow: "#FFE600",
-  red: "#FF3333",
+  green: "#e4fee1",
+  yellow: "#f7fa99",
+  red: "#621d1d",
 };
 
 function FitBounds({ wells }) {
@@ -26,7 +26,7 @@ function FitBounds({ wells }) {
 export default function MapWidget({ wells, onSelectWell, selectedWellId }) {
   if (!wells || wells.length === 0) {
     return (
-      <div className="neu-card h-[500px] flex items-center justify-center">
+      <div className="neu-card h-[350px] lg:h-[500px] flex items-center justify-center">
         <p className="text-xl font-bold">Loading map data...</p>
       </div>
     );
@@ -38,8 +38,7 @@ export default function MapWidget({ wells, onSelectWell, selectedWellId }) {
         center={[22.5, 80]}
         zoom={5}
         scrollWheelZoom={true}
-        style={{ height: "500px", width: "100%" }}
-        className="z-0"
+        className="z-0 h-[350px] lg:h-[500px] w-full"
       >
         <TileLayer
           attribution='&copy; <a href="https://carto.com">CARTO</a>'
@@ -54,7 +53,7 @@ export default function MapWidget({ wells, onSelectWell, selectedWellId }) {
             pathOptions={{
               color: "#000",
               weight: well.id === selectedWellId ? 3 : 2,
-              fillColor: RISK_COLORS[well.color] || "#00CC66",
+              fillColor: RISK_COLORS[well.color] || "#e4fee1",
               fillOpacity: 0.9,
             }}
             eventHandlers={{
@@ -98,13 +97,13 @@ export default function MapWidget({ wells, onSelectWell, selectedWellId }) {
       </MapContainer>
 
       {/* Map Legend */}
-      <div className="absolute bottom-4 right-4 z-[1000] bg-white border-3 border-black p-3" style={{ boxShadow: "4px 4px 0px rgba(0,0,0,1)" }}>
+      <div className="absolute bottom-4 right-4 z-[400] bg-white border-3 border-black p-2 shadow-neu-sm pointer-events-none hidden sm:block">
         <p className="text-xs font-bold uppercase tracking-wider mb-2">Risk Level</p>
         <div className="space-y-1">
           {[
-            { color: "#00CC66", label: "Low" },
-            { color: "#FFE600", label: "Moderate" },
-            { color: "#FF3333", label: "High" },
+            { color: "#e4fee1", label: "Low" },
+            { color: "#f7fa99", label: "Moderate" },
+            { color: "#621d1d", label: "High" },
           ].map((item) => (
             <div key={item.label} className="flex items-center gap-2 text-xs font-medium">
               <span

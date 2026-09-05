@@ -58,7 +58,7 @@ export default function ForecastingWidget({ selectedWell }) {
   const riskLabel =
     predictedWqi > 75 ? "High" : predictedWqi > 50 ? "Moderate" : "Low";
   const riskColor =
-    predictedWqi > 75 ? "#FF3333" : predictedWqi > 50 ? "#FFE600" : "#00CC66";
+    predictedWqi > 75 ? "#621d1d" : predictedWqi > 50 ? "#f7fa99" : "#e4fee1";
 
   return (
     <div className="space-y-4">
@@ -92,17 +92,17 @@ export default function ForecastingWidget({ selectedWell }) {
                   border: "3px solid #000",
                   borderRadius: 0,
                   boxShadow: "4px 4px 0px rgba(0,0,0,1)",
-                  fontFamily: "Space Grotesk",
+                  fontFamily: "Rovique",
                   fontWeight: 600,
                 }}
               />
-              <ReferenceLine y={75} stroke="#FF3333" strokeWidth={2} strokeDasharray="8 4" label={{ value: "High Risk", position: "right", fontSize: 10, fontWeight: 700, fill: "#FF3333" }} />
+              <ReferenceLine y={75} stroke="#621d1d" strokeWidth={2} strokeDasharray="8 4" label={{ value: "High Risk", position: "right", fontSize: 10, fontWeight: 700, fill: "#621d1d" }} />
               {/* Confidence band */}
               <Area
                 type="monotone"
                 dataKey="upper"
                 stroke="none"
-                fill="#FFE600"
+                fill="#f7fa99"
                 fillOpacity={0.2}
               />
               <Area
@@ -159,7 +159,7 @@ export default function ForecastingWidget({ selectedWell }) {
             value={horizon}
             onChange={(e) => setHorizon(parseInt(e.target.value))}
             className="flex-1 h-3 bg-black appearance-none cursor-pointer accent-yellow-400"
-            style={{ accentColor: "#FFE600" }}
+            style={{ accentColor: "#f7fa99" }}
           />
           <span className="neu-badge text-sm">{horizon} months</span>
         </div>
@@ -188,7 +188,7 @@ export default function ForecastingWidget({ selectedWell }) {
             value={rainfallDelta}
             onChange={(e) => setRainfallDelta(parseInt(e.target.value))}
             className="w-full h-3 bg-black appearance-none cursor-pointer"
-            style={{ accentColor: "#FFE600" }}
+            style={{ accentColor: "#f7fa99" }}
           />
           <div className="flex justify-between text-xs font-bold mt-1">
             <span>−50%</span>

@@ -48,7 +48,7 @@ function PriorityList() {
               <span
                 className="neu-badge text-xs shrink-0"
                 style={{
-                  backgroundColor: w.risk_level === "High" ? "#FF3333" : "#FFE600",
+                  backgroundColor: w.risk_level === "High" ? "#621d1d" : "#f7fa99",
                   color: w.risk_level === "High" ? "#fff" : "#000",
                 }}
               >
@@ -153,9 +153,9 @@ function NlpChatBox() {
             <div
               className={`max-w-[85%] p-3 text-sm font-medium border-3 border-black ${
                 msg.role === "user"
-                  ? "bg-[#AEFF00]"
+                  ? "bg-[#eafed0]"
                   : msg.role === "system"
-                  ? "bg-[#00D4FF]"
+                  ? "bg-[#fce5bf]"
                   : "bg-white"
               }`}
               style={{ boxShadow: "3px 3px 0px rgba(0,0,0,1)", whiteSpace: "pre-wrap" }}

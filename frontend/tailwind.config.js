@@ -7,20 +7,20 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Space Grotesk', 'sans-serif'],
-        mono: ['Space Mono', 'monospace'],
+        sans: ['Rovique', 'sans-serif'],
+        mono: ['Rovique', 'monospace'],
       },
       colors: {
         neu: {
-          yellow: '#FFE600',
-          green: '#AEFF00',
-          pink: '#FF6EC7',
-          blue: '#00D4FF',
-          orange: '#FF9E00',
-          red: '#FF3333',
-          safe: '#00CC66',
+          yellow: '#f7fa99',
+          green: '#eafed0',
+          pink: '#fce5bf',
+          blue: '#fce5bf',
+          orange: '#fce5bf',
+          red: '#621d1d',
+          safe: '#e4fee1',
           white: '#FAFAFA',
-          'off-white': '#F0F0F0',
+          'off-white': '#fcefbd',
           black: '#000000',
         },
       },

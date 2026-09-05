@@ -63,7 +63,7 @@ export default function LabReportAnalyzer() {
           Enter parameter values from a lab report to instantly calculate the Water Quality Index (WQI) and determine usability.
         </p>
         
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
           {[
             { id: 'ph', label: 'pH' },
             { id: 'tds', label: 'TDS (mg/L)' },
@@ -97,7 +97,7 @@ export default function LabReportAnalyzer() {
         <button 
           onClick={handleAnalyze} 
           disabled={loading}
-          className="neu-btn w-full justify-center bg-[#AEFF00]"
+          className="neu-btn w-full justify-center bg-[#eafed0]"
         >
           {loading ? "Analyzing..." : "Analyze Report"}
         </button>
@@ -120,9 +120,9 @@ export default function LabReportAnalyzer() {
                 className="neu-badge text-lg"
                 style={{
                   backgroundColor: 
-                    result.wqi <= 25 ? "#00CC66" :
-                    result.wqi <= 50 ? "#AEFF00" :
-                    result.wqi <= 75 ? "#FFE600" : "#FF3333"
+                    result.wqi <= 25 ? "#e4fee1" :
+                    result.wqi <= 50 ? "#eafed0" :
+                    result.wqi <= 75 ? "#f7fa99" : "#621d1d"
                 }}
               >
                 {result.wqi_category}
@@ -143,8 +143,8 @@ export default function LabReportAnalyzer() {
                       className="px-2 py-0.5 border-2 border-black text-[10px] font-bold"
                       style={{
                         backgroundColor: 
-                          data.status === "Desirable" ? "#00CC66" :
-                          data.status === "Permissible" ? "#FFE600" : "#FF3333"
+                          data.status === "Desirable" ? "#e4fee1" :
+                          data.status === "Permissible" ? "#f7fa99" : "#621d1d"
                       }}
                     >
                       {data.status.toUpperCase()}

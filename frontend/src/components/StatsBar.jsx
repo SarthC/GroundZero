@@ -4,10 +4,10 @@ import { Droplets, AlertTriangle, MapPin, Activity } from "lucide-react";
 
 const STAT_CARDS = [
   { key: "total_wells", label: "Total Wells", icon: MapPin, bg: "#FAFAFA" },
-  { key: "high_risk", label: "High Risk", icon: AlertTriangle, bg: "#FF3333" },
-  { key: "moderate_risk", label: "Moderate Risk", icon: Activity, bg: "#FFE600" },
-  { key: "avg_wqi", label: "Avg WQI", icon: Droplets, bg: "#00D4FF" },
-  { key: "states_covered", label: "States", icon: MapPin, bg: "#AEFF00" },
+  { key: "high_risk", label: "High Risk", icon: AlertTriangle, bg: "#621d1d" },
+  { key: "moderate_risk", label: "Moderate Risk", icon: Activity, bg: "#f7fa99" },
+  { key: "avg_wqi", label: "Avg WQI", icon: Droplets, bg: "#fce5bf" },
+  { key: "states_covered", label: "States", icon: MapPin, bg: "#eafed0" },
   { key: "districts_covered", label: "Districts", icon: MapPin, bg: "#FF6EC7" },
 ];
 

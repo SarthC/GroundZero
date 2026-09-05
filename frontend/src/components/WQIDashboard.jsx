@@ -20,17 +20,17 @@ function WQIGauge({ score, category }) {
   const y = 145 + radius * Math.sin(-angle * RADIAN); // cy = 145
 
   const getColor = (s) => {
-    if (s <= 25) return "#00CC66";
-    if (s <= 50) return "#AEFF00";
-    if (s <= 75) return "#FFE600";
-    return "#FF3333";
+    if (s <= 25) return "#e4fee1";
+    if (s <= 50) return "#eafed0";
+    if (s <= 75) return "#f7fa99";
+    return "#621d1d";
   };
 
   const gaugeData = [
-    { name: "Excellent", value: 25, color: "#00CC66" },
-    { name: "Good", value: 25, color: "#AEFF00" },
-    { name: "Poor", value: 25, color: "#FFE600" },
-    { name: "Very Poor", value: 25, color: "#FF3333" },
+    { name: "Excellent", value: 25, color: "#e4fee1" },
+    { name: "Good", value: 25, color: "#eafed0" },
+    { name: "Poor", value: 25, color: "#f7fa99" },
+    { name: "Very Poor", value: 25, color: "#621d1d" },
   ];
 
   return (
@@ -120,7 +120,7 @@ function ParamBarChart({ params, bisLimits }) {
             border: "3px solid #000",
             borderRadius: 0,
             boxShadow: "4px 4px 0px rgba(0,0,0,1)",
-            fontFamily: "Space Grotesk",
+            fontFamily: "Rovique",
             fontWeight: 600,
           }}
         />
@@ -128,7 +128,7 @@ function ParamBarChart({ params, bisLimits }) {
           {data.map((entry, i) => (
             <Cell
               key={i}
-              fill={entry.exceeds ? "#FF3333" : "#00D4FF"}
+              fill={entry.exceeds ? "#621d1d" : "#fce5bf"}
             />
           ))}
           <LabelList dataKey="value" position="top" style={{ fontSize: 10, fontWeight: 700, fill: "#000" }} />
@@ -146,7 +146,7 @@ function ShapChart({ shapValues }) {
   const data = top3.map((s) => ({
     name: s.param,
     impact: s.impact,
-    fill: s.impact > 0 ? "#FF3333" : "#00CC66",
+    fill: s.impact > 0 ? "#621d1d" : "#e4fee1",
   }));
 
   return (
@@ -170,7 +170,7 @@ function ShapChart({ shapValues }) {
             border: "3px solid #000",
             borderRadius: 0,
             boxShadow: "4px 4px 0px rgba(0,0,0,1)",
-            fontFamily: "Space Grotesk",
+            fontFamily: "Rovique",
             fontWeight: 600,
           }}
         />
@@ -258,9 +258,9 @@ export default function WQIDashboard({ wellDetail }) {
         </h3>
         <ParamBarChart params={wellDetail.params} bisLimits={wellDetail.bis_limits} />
         <p className="text-xs text-gray-500 mt-2">
-          <span className="inline-block w-3 h-3 bg-[#FF3333] border-2 border-black mr-1" />
+          <span className="inline-block w-3 h-3 bg-[#621d1d] border-2 border-black mr-1" />
           Exceeds BIS limit &nbsp;
-          <span className="inline-block w-3 h-3 bg-[#00D4FF] border-2 border-black mr-1" />
+          <span className="inline-block w-3 h-3 bg-[#fce5bf] border-2 border-black mr-1" />
           Within limit
         </p>
       </div>
