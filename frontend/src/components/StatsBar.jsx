@@ -6,9 +6,9 @@ const STAT_CARDS = [
   { key: "total_wells", label: "Total Wells", icon: MapPin, bg: "#FAFAFA" },
   { key: "high_risk", label: "High Risk", icon: AlertTriangle, bg: "#621d1d" },
   { key: "moderate_risk", label: "Moderate Risk", icon: Activity, bg: "#f7fa99" },
+  { key: "low_risk", label: "Low Risk", icon: Droplets, bg: "#e4fee1" },
   { key: "avg_wqi", label: "Avg WQI", icon: Droplets, bg: "#fce5bf" },
   { key: "states_covered", label: "States", icon: MapPin, bg: "#eafed0" },
-  { key: "districts_covered", label: "Districts", icon: MapPin, bg: "#FF6EC7" },
 ];
 
 export default function StatsBar() {

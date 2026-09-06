@@ -3,9 +3,13 @@ FastAPI backend for AI Groundwater Contamination Risk Intelligence System.
 Run: uvicorn main:app --reload --port 8000
 """
 import math
+import os
 import random
 from typing import Optional
 
+import joblib
+import numpy as np
+import pandas as pd
 from fastapi import FastAPI, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -13,6 +17,23 @@ from sqlalchemy import func, text, distinct
 
 from database import get_db, engine
 from models import Well
+
+# ---------------------------------------------------------------------------
+# Load trained ML model for forecasting
+# ---------------------------------------------------------------------------
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model.pkl")
+RAINFALL_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "district_rainfall.csv")
+
+_model_data = None
+_rainfall_df = None
+
+try:
+    _model_data = joblib.load(MODEL_PATH)
+    _rainfall_df = pd.read_csv(RAINFALL_CSV)
+    print(f"[ML] Model loaded: R²={_model_data['r2']:.4f}, MAE={_model_data['mae']:.2f}")
+except Exception as e:
+    print(f"[ML] Warning: Could not load model ({e}). Forecast will use fallback.")
+
 
 app = FastAPI(title="Groundwater Risk Intelligence API")
 
@@ -343,60 +364,134 @@ def get_well_detail(well_db_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# 2. Forecasting endpoint (generates synthetic time‑series)
+# 2. Forecasting endpoint (ML model-based predictions)
 # ---------------------------------------------------------------------------
+
+def _get_well_rainfall(state: str, district: str, year: int) -> float:
+    """Look up the base annual rainfall for a well's district."""
+    if _rainfall_df is None:
+        return 1100.0  # fallback
+    match = _rainfall_df[
+        (_rainfall_df["state"].str.lower() == state.lower()) &
+        (_rainfall_df["district"].str.lower() == district.lower()) &
+        (_rainfall_df["year"] == year)
+    ]
+    if not match.empty:
+        return float(match.iloc[0]["annual_rainfall_mm"])
+    # Try state average
+    state_match = _rainfall_df[_rainfall_df["state"].str.lower() == state.lower()]
+    if not state_match.empty:
+        return float(state_match["annual_rainfall_mm"].mean())
+    return 1100.0
+
+
+def _predict_wqi(well, rainfall_mm: float) -> float:
+    """Use the trained model to predict WQI for given parameters + rainfall."""
+    if _model_data is None:
+        return well.wqi or 50.0
+
+    model = _model_data["model"]
+    features = _model_data["features"]
+    medians = _model_data["feature_medians"]
+
+    # Build feature vector from the well's actual water quality parameters
+    feature_values = []
+    for feat in features:
+        if feat == "annual_rainfall_mm":
+            feature_values.append(rainfall_mm)
+        else:
+            val = getattr(well, feat, None)
+            if val is None or (isinstance(val, float) and math.isnan(val)):
+                val = medians.get(feat, 0)
+            feature_values.append(float(val))
+
+    X = np.array([feature_values])
+    predicted = model.predict(X)[0]
+    return float(max(0, min(100, predicted)))
+
 
 @app.get("/api/forecast/{well_db_id}")
 def get_forecast(
     well_db_id: int,
-    horizon: int = Query(default=6, ge=1, le=24),
+    horizon: int = Query(default=12, ge=1, le=60),
     rainfall_delta: float = Query(default=0.0),
     db: Session = Depends(get_db),
 ):
     """
     Returns historical WQI trend for the well (across years) and a
-    synthetic Prophet‑style forecast going `horizon` months into the future.
+    ML model-based forecast going `horizon` months into the future.
+    The rainfall_delta (%) adjusts the base rainfall to simulate
+    what-if scenarios.
     """
-    # Get all records for this well_id across years
+    # Get the well record
     w = db.query(Well).filter(Well.id == well_db_id).first()
     if not w:
         return {"error": "Well not found"}
 
     # Gather historical data points for this well_id across different years
     siblings = (
-        db.query(Well.year, Well.wqi)
+        db.query(Well)
         .filter(Well.well_id == w.well_id)
         .order_by(Well.year)
         .all()
     )
     if not siblings:
-        siblings = [(w.year, w.wqi)]
+        siblings = [w]
 
     historical = [
         {"date": f"{s.year}-06", "wqi": round(s.wqi, 2) if s.wqi else 50}
         for s in siblings
     ]
 
-    # Generate synthetic forecast
-    last_wqi = historical[-1]["wqi"] if historical else 50
-    last_year = int(historical[-1]["date"][:4]) if historical else 2023
+    # Get base rainfall for this district
+    last_year = siblings[-1].year if siblings else 2023
+    base_rainfall = _get_well_rainfall(w.state, w.district, last_year)
+
+    # Apply rainfall delta (e.g., +30% means 30% more rainfall)
+    adjusted_rainfall = base_rainfall * (1 + rainfall_delta / 100.0)
+
+    # Generate ML-based forecast
     forecast = []
+    random.seed(well_db_id)  # Deterministic per-well for consistency
+
     for m in range(1, horizon + 1):
         month_offset = m
         year = last_year + (5 + month_offset) // 12
         month = ((5 + month_offset) % 12) + 1
-        # Simple random walk with rainfall adjustment
-        drift = random.uniform(-3, 5) + (rainfall_delta * 0.15)
-        projected = max(0, min(100, last_wqi + drift))
-        last_wqi = projected
+
+        # Add slight seasonal variation to rainfall
+        seasonal_factor = 1.0 + 0.05 * math.sin(2 * math.pi * month / 12)
+        month_rainfall = adjusted_rainfall * seasonal_factor
+
+        # Add small random variation per month (±3%)
+        month_rainfall *= random.uniform(0.97, 1.03)
+
+        # Predict WQI using the trained model
+        predicted_wqi = _predict_wqi(w, month_rainfall)
+
+        # Add small noise for natural variation (±2 WQI points)
+        noise = random.uniform(-2, 2)
+        predicted_wqi = max(0, min(100, predicted_wqi + noise))
+
+        # Confidence interval (wider as horizon extends)
+        uncertainty = 3 + (m / horizon) * 8  # 3 to 11 WQI points
+        lower = max(0, predicted_wqi - uncertainty)
+        upper = min(100, predicted_wqi + uncertainty)
+
         forecast.append({
             "date": f"{year}-{month:02d}",
-            "wqi": round(projected, 2),
-            "lower": round(max(0, projected - random.uniform(5, 12)), 2),
-            "upper": round(min(100, projected + random.uniform(5, 12)), 2),
+            "wqi": round(predicted_wqi, 2),
+            "lower": round(lower, 2),
+            "upper": round(upper, 2),
         })
 
-    return {"well_id": w.well_id, "historical": historical, "forecast": forecast}
+    return {
+        "well_id": w.well_id,
+        "historical": historical,
+        "forecast": forecast,
+        "base_rainfall_mm": round(base_rainfall, 1),
+        "adjusted_rainfall_mm": round(adjusted_rainfall, 1),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -412,24 +507,36 @@ def nlp_query(payload: dict, db: Session = Depends(get_db)):
 
     tokens = question.lower().split()
 
-    # Try to find a district or state mentioned in the query
+    # Try to find a location, district or state mentioned in the query
+    locations = [r[0] for r in db.query(distinct(Well.location)).all() if r[0]]
     districts = [r[0] for r in db.query(distinct(Well.district)).all() if r[0]]
     states = [r[0] for r in db.query(distinct(Well.state)).all() if r[0]]
 
+    matched_location = None
     matched_district = None
     matched_state = None
-    for d in districts:
-        if d.lower() in question.lower():
-            matched_district = d
+    
+    for l in locations:
+        if l.lower() in question.lower():
+            matched_location = l
             break
-    for s in states:
-        if s.lower() in question.lower():
-            matched_state = s
-            break
+    if not matched_location:
+        for d in districts:
+            if d.lower() in question.lower():
+                matched_district = d
+                break
+    if not matched_location and not matched_district:
+        for s in states:
+            if s.lower() in question.lower():
+                matched_state = s
+                break
 
     q = db.query(Well)
     label = "the selected area"
-    if matched_district:
+    if matched_location:
+        q = q.filter(Well.location == matched_location)
+        label = matched_location
+    elif matched_district:
         q = q.filter(Well.district == matched_district)
         label = matched_district
     elif matched_state:

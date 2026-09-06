@@ -6,7 +6,7 @@ import {
 import { fetchForecast } from "../api";
 
 export default function ForecastingWidget({ selectedWell }) {
-  const [horizon, setHorizon] = useState(6);
+  const [horizon, setHorizon] = useState(12);
   const [rainfallDelta, setRainfallDelta] = useState(0);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -59,6 +59,7 @@ export default function ForecastingWidget({ selectedWell }) {
     predictedWqi > 75 ? "High" : predictedWqi > 50 ? "Moderate" : "Low";
   const riskColor =
     predictedWqi > 75 ? "#621d1d" : predictedWqi > 50 ? "#f7fa99" : "#e4fee1";
+
 
   return (
     <div className="space-y-4">
@@ -153,21 +154,22 @@ export default function ForecastingWidget({ selectedWell }) {
         <div className="flex items-center gap-4">
           <input
             type="range"
-            min={3}
-            max={12}
-            step={3}
+            min={12}
+            max={60}
+            step={12}
             value={horizon}
             onChange={(e) => setHorizon(parseInt(e.target.value))}
             className="flex-1 h-3 bg-black appearance-none cursor-pointer accent-yellow-400"
             style={{ accentColor: "#f7fa99" }}
           />
-          <span className="neu-badge text-sm">{horizon} months</span>
+          <span className="neu-badge text-sm">{horizon / 12} year(s)</span>
         </div>
         <div className="flex justify-between text-xs font-bold mt-1 px-1">
-          <span>3mo</span>
-          <span>6mo</span>
-          <span>9mo</span>
-          <span>12mo</span>
+          <span>1yr</span>
+          <span>2yr</span>
+          <span>3yr</span>
+          <span>4yr</span>
+          <span>5yr</span>
         </div>
       </div>
 

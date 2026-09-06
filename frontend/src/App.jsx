@@ -6,6 +6,7 @@ import WQIDashboard from "./components/WQIDashboard";
 import ForecastingWidget from "./components/ForecastingWidget";
 import ActionableIntelligence from "./components/ActionableIntelligence";
 import LabReportAnalyzer from "./components/LabReportAnalyzer";
+import FlickeringGrid from "./components/FlickeringGrid";
 import { Droplets, Filter, RefreshCw } from "lucide-react";
 
 export default function App() {
@@ -80,7 +81,20 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F0F0F0]">
+    <div className="min-h-screen bg-[#d0eff5] relative">
+      {/* ─── Flickering Grid Background ─── */}
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-50">
+        <FlickeringGrid
+          squareSize={4}
+          gridGap={6}
+          color="#2e6c7a"
+          maxOpacity={0.4}
+          flickerChance={0.1}
+        />
+      </div>
+
+      {/* ─── Content ─── */}
+      <div className="relative z-10">
       {/* ─── Header ─── */}
       <header className="bg-black text-white border-b-4 border-black">
         <div className="max-w-[1800px] mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
@@ -221,22 +235,14 @@ export default function App() {
         )}
 
         {activeTab === "forecast" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-slide-up">
-            <div className="lg:col-span-1">
-              <ForecastingWidget selectedWell={selectedWell} />
-            </div>
-            <div className="lg:col-span-1">
-              <WQIDashboard wellDetail={wellDetail} />
-            </div>
+          <div className="animate-slide-up">
+            <ForecastingWidget selectedWell={selectedWell} />
           </div>
         )}
 
         {activeTab === "intel" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-slide-up">
+          <div className="animate-slide-up">
             <ActionableIntelligence />
-            <div>
-              <ForecastingWidget selectedWell={selectedWell} />
-            </div>
           </div>
         )}
 
@@ -253,11 +259,9 @@ export default function App() {
           <p className="text-xs font-medium text-gray-400">
             AI Groundwater Risk Intelligence System • Data: CGWB India
           </p>
-          <p className="text-xs font-medium text-gray-400">
-            Built with FastAPI + React + Recharts + Leaflet
-          </p>
         </div>
       </footer>
+      </div>
     </div>
   );
 }

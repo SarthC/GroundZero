@@ -28,6 +28,10 @@ def ingest():
         if col in df.columns:
             df[col] = df[col].map({"True": True, "False": False, True: True, False: False})
 
+    # Standardize risk_level to match backend expectations
+    if "risk_level" in df.columns:
+        df["risk_level"] = df["risk_level"].replace("Medium", "Moderate")
+
     # Ensure numeric columns are actually numeric
     numeric_cols = [
         "latitude", "longitude", "pH", "EC", "CO3", "HCO3", "Cl", "SO4",
