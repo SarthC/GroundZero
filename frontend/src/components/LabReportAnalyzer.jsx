@@ -104,7 +104,7 @@ export default function LabReportAnalyzer() {
       </div>
 
       {/* Analysis Result */}
-      {result && (
+      {result && !result.error && (
         <div className="neu-card-yellow slide-up">
           <h3 className="text-lg font-bold uppercase tracking-wider border-b-3 border-black pb-2 mb-4">
             📊 Analysis Results
@@ -113,19 +113,22 @@ export default function LabReportAnalyzer() {
           <div className="flex justify-between items-center mb-4">
             <div>
               <p className="text-sm font-bold uppercase text-gray-600">Calculated WQI</p>
-              <p className="text-3xl font-bold mono">{result.wqi.toFixed(1)}</p>
+              <p className="text-3xl font-bold mono">
+                {typeof result.wqi === "number" ? result.wqi.toFixed(1) : "N/A"}
+              </p>
             </div>
             <div className="text-right">
               <span 
                 className="neu-badge text-lg"
                 style={{
                   backgroundColor: 
-                    result.wqi <= 25 ? "#e4fee1" :
-                    result.wqi <= 50 ? "#eafed0" :
-                    result.wqi <= 75 ? "#f7fa99" : "#621d1d"
+                    (result.wqi || 0) <= 25 ? "#e4fee1" :
+                    (result.wqi || 0) <= 50 ? "#eafed0" :
+                    (result.wqi || 0) <= 75 ? "#f7fa99" : "#621d1d",
+                  color: (result.wqi || 0) > 75 ? "#fff" : "#000"
                 }}
               >
-                {result.wqi_category}
+                {result.wqi_category || "Unclassified"}
               </span>
             </div>
           </div>
@@ -134,39 +137,60 @@ export default function LabReportAnalyzer() {
           <div className="mt-4 mb-4">
             <h4 className="text-sm font-bold uppercase mb-2">Parameter Status</h4>
             <div className="space-y-2">
-              {Object.entries(result.analysis).map(([param, data]) => (
-                <div key={param} className="flex justify-between items-center text-sm border-b-2 border-black border-dashed pb-1">
-                  <span className="font-bold uppercase">{param}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="mono">{data.value}</span>
-                    <span 
-                      className="px-2 py-0.5 border-2 border-black text-[10px] font-bold"
-                      style={{
-                        backgroundColor: 
-                          data.status === "Desirable" ? "#e4fee1" :
-                          data.status === "Permissible" ? "#f7fa99" : "#621d1d"
-                      }}
-                    >
-                      {data.status.toUpperCase()}
-                    </span>
+              {(() => {
+                const items = result.analysis
+                  ? Object.entries(result.analysis).map(([param, data]) => ({
+                      param,
+                      val: data.value,
+                      status: data.status,
+                    }))
+                  : Array.isArray(result.param_analysis)
+                  ? result.param_analysis.map((item) => ({
+                      param: item.name || item.param,
+                      val: item.value,
+                      status: item.status,
+                    }))
+                  : [];
+
+                if (items.length === 0) {
+                  return <p className="text-xs text-gray-500">No parameter breakdown available.</p>;
+                }
+
+                return items.map((data, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-sm border-b-2 border-black border-dashed pb-1">
+                    <span className="font-bold uppercase">{data.param}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="mono">{data.val}</span>
+                      <span 
+                        className="px-2 py-0.5 border-2 border-black text-[10px] font-bold"
+                        style={{
+                          backgroundColor: 
+                            String(data.status).includes("Desirable") ? "#e4fee1" :
+                            String(data.status).includes("Permissible") ? "#f7fa99" : "#621d1d",
+                          color: String(data.status).includes("Hazardous") || String(data.status).includes("Exceeds") ? "#fff" : "#000"
+                        }}
+                      >
+                        {String(data.status).toUpperCase()}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
           </div>
 
           {/* Usability Tiers */}
-          {result.usability_tiers && (
+          {result.usability_tiers && Array.isArray(result.usability_tiers) && (
             <div className="mt-4">
               <h4 className="text-sm font-bold uppercase mb-2">Water Usability</h4>
               <div className="space-y-2">
-                {result.usability_tiers.map((tier) => (
+                {result.usability_tiers.map((tier, idx) => (
                   <div 
-                    key={tier.tier}
+                    key={tier.tier || idx}
                     className={`p-2 border-2 border-black ${tier.is_current ? 'bg-white shadow-neu-sm' : 'bg-transparent border-opacity-30'}`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-lg">{tier.emoji}</span>
+                      <span className="text-lg">{tier.emoji || "💧"}</span>
                       <span className={`font-bold text-sm ${tier.is_current ? 'text-black' : 'text-gray-500'}`}>
                         {tier.label}
                       </span>

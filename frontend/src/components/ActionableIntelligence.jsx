@@ -1,17 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { fetchPriorityWells, fetchRetestAlerts, postNlpQuery } from "../api";
 import { FlaskConical, AlertTriangle, MessageCircle, FileText, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { generateDistrictSummaryPDF } from "../utils/pdfReport";
 
 /* ─── Priority Wells Panel ─── */
-function PriorityList() {
-  const [wells, setWells] = useState([]);
+function PriorityList({ wells }) {
   const [expanded, setExpanded] = useState(true);
-
-  useEffect(() => {
-    fetchPriorityWells()
-      .then((res) => setWells(res.data))
-      .catch(console.error);
-  }, []);
 
   return (
     <div className="neu-card">
@@ -63,15 +57,8 @@ function PriorityList() {
 }
 
 /* ─── Re-test Alert Panel ─── */
-function RetestAlerts() {
-  const [alerts, setAlerts] = useState([]);
+function RetestAlerts({ alerts }) {
   const [expanded, setExpanded] = useState(true);
-
-  useEffect(() => {
-    fetchRetestAlerts()
-      .then((res) => setAlerts(res.data))
-      .catch(console.error);
-  }, []);
 
   return (
     <div className="neu-card-yellow">
@@ -90,7 +77,7 @@ function RetestAlerts() {
           {alerts.length === 0 && <p className="text-sm font-medium text-gray-500">Loading...</p>}
           {alerts.map((a, i) => (
             <div
-              key={a.id}
+              key={a.id || i}
               className="flex items-start gap-3 p-3 border-3 border-black bg-white"
               style={{ boxShadow: "3px 3px 0px rgba(0,0,0,1)" }}
             >
@@ -112,7 +99,7 @@ function RetestAlerts() {
 function NlpChatBox() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([
-    { role: "system", text: "👋 Ask me anything about groundwater quality! Try: \"Is water safe near Pune?\"" },
+    { role: "system", text: "👋 Ask me anything about groundwater quality! Try: \"Is water safe near Pune?\" or \"Loni Kalbhor\"" },
   ]);
   const [loading, setLoading] = useState(false);
   const chatEndRef = useRef(null);
@@ -180,7 +167,7 @@ function NlpChatBox() {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          placeholder="Is water safe near Pune?"
+          placeholder="e.g. Loni Kalbhor or Is water safe near Pune?"
           className="neu-input flex-1"
         />
         <button onClick={handleSend} className="neu-btn-green flex items-center gap-1">
@@ -193,20 +180,33 @@ function NlpChatBox() {
 
 /* ─── Main Actionable Intelligence ─── */
 export default function ActionableIntelligence() {
+  const [priorityWells, setPriorityWells] = useState([]);
+  const [retestAlerts, setRetestAlerts] = useState([]);
+
+  useEffect(() => {
+    fetchPriorityWells()
+      .then((res) => setPriorityWells(res.data))
+      .catch(console.error);
+
+    fetchRetestAlerts()
+      .then((res) => setRetestAlerts(res.data))
+      .catch(console.error);
+  }, []);
+
   const handleGenerateReport = () => {
-    alert("📄 PDF Report generation would be triggered here.\nIn production, this calls the backend to generate a district summary PDF.");
+    generateDistrictSummaryPDF(priorityWells, retestAlerts);
   };
 
   return (
     <div className="space-y-4">
-      <PriorityList />
-      <RetestAlerts />
+      <PriorityList wells={priorityWells} />
+      <RetestAlerts alerts={retestAlerts} />
       <NlpChatBox />
 
       {/* PDF Report Button */}
       <button
         onClick={handleGenerateReport}
-        className="w-full neu-btn-red flex items-center justify-center gap-3 py-4 text-base"
+        className="w-full neu-btn-red flex items-center justify-center gap-3 py-4 text-base cursor-pointer"
       >
         <FileText size={20} strokeWidth={3} />
         Auto-Generate District PDF Report

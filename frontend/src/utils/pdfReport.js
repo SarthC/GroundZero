@@ -409,4 +409,207 @@ export function generateWellReportPDF(wellDetail) {
   doc.save(`GroundZero_Well_${safeWellId}_Report.pdf`);
 }
 
+/**
+ * Generates and downloads a comprehensive Actionable Intelligence & Risk PDF report.
+ * @param {Array} priorityWells - List of priority wells
+ * @param {Array} retestAlerts - List of retest alerts
+ */
+export function generateDistrictSummaryPDF(priorityWells = [], retestAlerts = []) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 14;
+  const contentWidth = pageWidth - marginX * 2;
+  const bottomMargin = 18;
+
+  let y = 0;
+
+  const ensureSpace = (needed) => {
+    if (y + needed > pageHeight - bottomMargin) {
+      doc.addPage();
+      y = 24;
+    }
+  };
+
+  // Header Banner
+  doc.setFillColor(...COLORS.headerBg);
+  doc.rect(0, 0, pageWidth, 28, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(255, 255, 255);
+  doc.text("GroundZero", marginX, 12);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(200, 200, 200);
+  doc.text("Actionable Intelligence & District Groundwater Risk Report", marginX, 18);
+
+  const generatedOn = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  doc.setFontSize(8);
+  doc.text(`Generated: ${generatedOn}`, pageWidth - marginX, 18, { align: "right" });
+
+  y = 36;
+
+  // Executive Summary Box
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...COLORS.black);
+  doc.text("Executive Summary & Risk Overview", marginX, y);
+  y += 6;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  const summaryText =
+    "This automated intelligence report summarizes high-priority test wells, re-test alerts, and water quality parameters requiring urgent field intervention. Priority scores are calculated based on WQI thresholds, contamination breach count, and historical variance.";
+  const wrappedSummary = doc.splitTextToSize(summaryText, contentWidth);
+  doc.text(wrappedSummary, marginX, y);
+  y += wrappedSummary.length * 5 + 6;
+
+  // Section 1: Priority Wells Table
+  if (priorityWells && priorityWells.length > 0) {
+    ensureSpace(20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(`1. Test-Priority Wells (${priorityWells.length} Wells Identified)`, marginX, y);
+    y += 4;
+
+    const tableRows = priorityWells.map((w, idx) => [
+      `#${idx + 1}`,
+      w.location || "N/A",
+      `${w.district || ""}, ${w.state || ""}`,
+      w.wqi != null ? String(w.wqi) : "N/A",
+      w.risk_level || "Unknown",
+      w.reason || "High risk parameters",
+    ]);
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [["#", "Location", "District / State", "WQI", "Risk", "Priority Reason"]],
+      body: tableRows,
+      theme: "grid",
+      headStyles: {
+        fillColor: COLORS.headerBg,
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+      },
+      bodyStyles: {
+        fontSize: 8.5,
+      },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 40 },
+        3: { cellWidth: 16 },
+        4: { cellWidth: 22 },
+        5: { cellWidth: "auto" },
+      },
+      didDrawPage: (data) => {
+        y = data.cursor.y + 8;
+      },
+    });
+  }
+
+  // Section 2: Re-test Alerts Table
+  if (retestAlerts && retestAlerts.length > 0) {
+    ensureSpace(20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(...COLORS.black);
+    doc.text(`2. Re-Test & Contamination Alerts (${retestAlerts.length} Active Alerts)`, marginX, y);
+    y += 4;
+
+    const alertRows = retestAlerts.map((a, idx) => [
+      `#${idx + 1}`,
+      a.location || "N/A",
+      `${a.district || ""}, ${a.state || ""}`,
+      a.alert || "Parameter anomaly detected",
+    ]);
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [["#", "Location", "District / State", "Alert Details"]],
+      body: alertRows,
+      theme: "grid",
+      headStyles: {
+        fillColor: [180, 40, 40],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+      },
+      bodyStyles: {
+        fontSize: 8.5,
+      },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 45 },
+        2: { cellWidth: 45 },
+        3: { cellWidth: "auto" },
+      },
+      didDrawPage: (data) => {
+        y = data.cursor.y + 8;
+      },
+    });
+  }
+
+  // Section 3: Recommended Actionable Protocols
+  ensureSpace(30);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...COLORS.black);
+  doc.text("3. Recommended Action Protocols", marginX, y);
+  y += 6;
+
+  const protocols = [
+    "• High-Risk Wells (WQI > 75): Issue immediate drinking water advisory; initiate lab re-sampling within 48 hours.",
+    "• Nitrate & Fluoride Breaches: Install reverse osmosis (RO) or activated alumina defluoridation filtration units.",
+    "• Iron & Hardness Breaches: Apply aeration and water softening treatment prior to domestic distribution.",
+    "• Seasonal Monitoring: Increase sampling frequency during post-monsoon recharge cycles.",
+  ];
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  protocols.forEach((line) => {
+    const wrapped = doc.splitTextToSize(line, contentWidth);
+    ensureSpace(wrapped.length * 5);
+    doc.text(wrapped, marginX, y);
+    y += wrapped.length * 5 + 1;
+  });
+
+  // Footer & Page numbers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    if (i > 1) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(...COLORS.mutedText);
+      doc.text("GroundZero — District Risk Summary Report (continued)", marginX, 12);
+      doc.setDrawColor(...COLORS.border);
+      doc.setLineWidth(0.2);
+      doc.line(marginX, 14, pageWidth - marginX, 14);
+    }
+    doc.setDrawColor(...COLORS.border);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, pageHeight - 12, pageWidth - marginX, pageHeight - 12);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...COLORS.mutedText);
+    doc.text("GroundZero AI Groundwater Risk Intelligence System", marginX, pageHeight - 7);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - marginX, pageHeight - 7, { align: "right" });
+  }
+
+  doc.save("GroundZero_District_Risk_Report.pdf");
+}
+
 export default generateWellReportPDF;

@@ -41,8 +41,8 @@ export default function MapWidget({ wells, onSelectWell, selectedWellId }) {
         className="z-0 h-[350px] lg:h-[500px] w-full"
       >
         <TileLayer
-          attribution='&copy; <a href="https://carto.com">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <FitBounds wells={wells} />
         {wells.map((well) => (

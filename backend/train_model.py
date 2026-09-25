@@ -87,10 +87,34 @@ def train():
             median_val = df[col].median()
             df[col] = df[col].fillna(median_val)
 
-    print(f"   Training samples: {len(df)}")
-    print(f"   Features: {ALL_FEATURES}")
+    # ── Engineer interaction features ──
+    # These help the model learn the dilution/concentration relationship
+    # between rainfall and key contaminant parameters
+    print("\n4b. Engineering rainfall interaction features ...")
+    INTERACTION_FEATURES = []
 
-    X = df[ALL_FEATURES].values
+    # Rainfall × key contaminant interactions
+    for param in ["TDS", "NO3", "TH"]:
+        feat_name = f"rainfall_x_{param}"
+        df[feat_name] = df[RAINFALL_FEATURE] * df[param]
+        INTERACTION_FEATURES.append(feat_name)
+
+    # Inverse rainfall (captures concentration effect when rainfall is low)
+    df["rainfall_inv"] = 1.0 / df[RAINFALL_FEATURE].clip(lower=1.0)
+    INTERACTION_FEATURES.append("rainfall_inv")
+
+    # Rainfall per-unit TDS (dilution ratio)
+    df["rainfall_per_TDS"] = df[RAINFALL_FEATURE] / df["TDS"].clip(lower=1.0)
+    INTERACTION_FEATURES.append("rainfall_per_TDS")
+
+    FINAL_FEATURES = ALL_FEATURES + INTERACTION_FEATURES
+    print(f"   Interaction features added: {INTERACTION_FEATURES}")
+    print(f"   Total features: {len(FINAL_FEATURES)}")
+
+    print(f"   Training samples: {len(df)}")
+    print(f"   Features: {FINAL_FEATURES}")
+
+    X = df[FINAL_FEATURES].values
     y = df[TARGET].values
 
     # ── Train/test split ──
@@ -101,8 +125,8 @@ def train():
     # ── Train Random Forest ──
     print("\n5. Training Random Forest model ...")
     model = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=15,
+        n_estimators=200,         # more trees for richer feature space
+        max_depth=20,             # deeper trees to capture interactions
         min_samples_split=10,
         min_samples_leaf=5,
         random_state=42,
@@ -125,7 +149,7 @@ def train():
     # ── Feature importance ──
     print("\n  Feature Importances:")
     importances = model.feature_importances_
-    for feat, imp in sorted(zip(ALL_FEATURES, importances), key=lambda x: -x[1]):
+    for feat, imp in sorted(zip(FINAL_FEATURES, importances), key=lambda x: -x[1]):
         bar = "█" * int(imp * 50)
         print(f"    {feat:>25s}  {imp:.4f}  {bar}")
 
@@ -135,10 +159,11 @@ def train():
     # Save model along with metadata
     model_data = {
         "model": model,
-        "features": ALL_FEATURES,
+        "features": FINAL_FEATURES,
         "water_quality_features": WATER_QUALITY_FEATURES,
         "rainfall_feature": RAINFALL_FEATURE,
-        "feature_medians": {col: float(df[col].median()) for col in ALL_FEATURES},
+        "interaction_features": INTERACTION_FEATURES,
+        "feature_medians": {col: float(df[col].median()) for col in FINAL_FEATURES},
         "mae": mae,
         "r2": r2,
     }
@@ -149,3 +174,4 @@ def train():
 
 if __name__ == "__main__":
     train()
+

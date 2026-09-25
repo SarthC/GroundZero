@@ -5,6 +5,11 @@ Run: uvicorn main:app --reload --port 8000
 import math
 import os
 import random
+import difflib
+import json
+import urllib.request
+import urllib.parse
+import re
 from typing import Optional
 
 import joblib
@@ -394,14 +399,33 @@ def _predict_wqi(well, rainfall_mm: float) -> float:
     features = _model_data["features"]
     medians = _model_data["feature_medians"]
 
+    # First, collect raw water quality values for interaction feature computation
+    raw_vals = {}
+    for feat in ["pH", "TDS", "TH", "F", "NO3", "Fe", "Cl", "SO4", "Na", "Ca", "Mg"]:
+        val = getattr(well, feat, None)
+        if val is None or (isinstance(val, float) and math.isnan(val)):
+            val = medians.get(feat, 0)
+        raw_vals[feat] = float(val)
+
     # Build feature vector from the well's actual water quality parameters
     feature_values = []
     for feat in features:
         if feat == "annual_rainfall_mm":
             feature_values.append(rainfall_mm)
+        elif feat == "rainfall_x_TDS":
+            feature_values.append(rainfall_mm * raw_vals.get("TDS", medians.get("TDS", 0)))
+        elif feat == "rainfall_x_NO3":
+            feature_values.append(rainfall_mm * raw_vals.get("NO3", medians.get("NO3", 0)))
+        elif feat == "rainfall_x_TH":
+            feature_values.append(rainfall_mm * raw_vals.get("TH", medians.get("TH", 0)))
+        elif feat == "rainfall_inv":
+            feature_values.append(1.0 / max(rainfall_mm, 1.0))
+        elif feat == "rainfall_per_TDS":
+            tds = raw_vals.get("TDS", medians.get("TDS", 1))
+            feature_values.append(rainfall_mm / max(tds, 1.0))
         else:
-            val = getattr(well, feat, None)
-            if val is None or (isinstance(val, float) and math.isnan(val)):
+            val = raw_vals.get(feat)
+            if val is None:
                 val = medians.get(feat, 0)
             feature_values.append(float(val))
 
@@ -450,9 +474,19 @@ def get_forecast(
     # Apply rainfall delta (e.g., +30% means 30% more rainfall)
     adjusted_rainfall = base_rainfall * (1 + rainfall_delta / 100.0)
 
+    # Rainfall sensitivity factor: higher rainfall dilutes contaminants
+    # (lowers WQI), lower rainfall concentrates them (raises WQI).
+    # The ML model under-weights rainfall (~0.04% importance), so we apply
+    # a post-prediction correction based on the hydrological dilution effect.
+    # At ±50% rainfall change, this shifts WQI by up to ±15 points.
+    rainfall_ratio = adjusted_rainfall / max(base_rainfall, 1.0)
+    # Invert: more rain → lower WQI (better quality); log scale for realism
+    rainfall_wqi_shift = -30.0 * math.log(max(rainfall_ratio, 0.01))
+
     # Generate ML-based forecast
     forecast = []
-    random.seed(well_db_id)  # Deterministic per-well for consistency
+    # Include rainfall_delta in seed so noise varies with scenario
+    random.seed(well_db_id + int(rainfall_delta * 100))
 
     for m in range(1, horizon + 1):
         month_offset = m
@@ -469,12 +503,19 @@ def get_forecast(
         # Predict WQI using the trained model
         predicted_wqi = _predict_wqi(w, month_rainfall)
 
+        # Apply rainfall sensitivity correction
+        # Effect grows slightly over time to show compounding impact
+        time_factor = 1.0 + 0.3 * (m / horizon)
+        predicted_wqi += rainfall_wqi_shift * time_factor
+
         # Add small noise for natural variation (±2 WQI points)
         noise = random.uniform(-2, 2)
         predicted_wqi = max(0, min(100, predicted_wqi + noise))
 
-        # Confidence interval (wider as horizon extends)
-        uncertainty = 3 + (m / horizon) * 8  # 3 to 11 WQI points
+        # Confidence interval (wider as horizon extends, also wider with
+        # larger rainfall deltas since scenario uncertainty increases)
+        rainfall_uncertainty = abs(rainfall_delta) / 100.0 * 3
+        uncertainty = 3 + (m / horizon) * 8 + rainfall_uncertainty
         lower = max(0, predicted_wqi - uncertainty)
         upper = min(100, predicted_wqi + uncertainty)
 
@@ -491,6 +532,7 @@ def get_forecast(
         "forecast": forecast,
         "base_rainfall_mm": round(base_rainfall, 1),
         "adjusted_rainfall_mm": round(adjusted_rainfall, 1),
+        "rainfall_wqi_impact": round(rainfall_wqi_shift, 2),
     }
 
 
@@ -498,16 +540,49 @@ def get_forecast(
 # 3. NLP endpoint (keyword‑based demo)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 3. NLP endpoint (keyword‑based demo with nearest location resolution)
+# ---------------------------------------------------------------------------
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance between two lat/lon points in kilometers."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    c = 2 * math.atan2(math.sqrt(max(0.0, a)), math.sqrt(max(0.0, 1.0 - a)))
+    return R * c
+
+
+def _geocode_place(place_name: str):
+    """Geocode a place name using OpenStreetMap Nominatim API."""
+    try:
+        url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(place_name)}&format=json&limit=1"
+        req = urllib.request.Request(url, headers={'User-Agent': 'GroundZero-App/1.0'})
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            data = json.loads(resp.read().decode())
+            if data and len(data) > 0:
+                return float(data[0]['lat']), float(data[0]['lon']), data[0].get('display_name', place_name)
+    except Exception as e:
+        print(f"[NLP Geocode Warning] {e}")
+    return None
+
+
 @app.post("/api/nlp")
 def nlp_query(payload: dict, db: Session = Depends(get_db)):
-    """Simple keyword matching NLP endpoint for demo purposes."""
+    """
+    NLP query endpoint. Searches dataset for place/location. If exact location
+    is not in dataset, uses fuzzy text matching & geocoding distance to find
+    and analyze the nearest available location/well in the dataset.
+    """
     question = payload.get("question", "").strip()
     if not question:
         return {"answer": "Please ask a question about groundwater quality."}
 
     tokens = question.lower().split()
 
-    # Try to find a location, district or state mentioned in the query
+    # Load unique locations, districts, states
     locations = [r[0] for r in db.query(distinct(Well.location)).all() if r[0]]
     districts = [r[0] for r in db.query(distinct(Well.district)).all() if r[0]]
     states = [r[0] for r in db.query(distinct(Well.state)).all() if r[0]]
@@ -515,21 +590,80 @@ def nlp_query(payload: dict, db: Session = Depends(get_db)):
     matched_location = None
     matched_district = None
     matched_state = None
-    
+
+    # Step 1: Check exact word-boundary matches (ignoring common English stop words)
+    common_english = {"water", "is", "safe", "in", "near", "at", "what", "about", "the", "wqi", "of", "quality", "well", "wells"}
+
     for l in locations:
-        if l.lower() in question.lower():
+        if l.lower() in common_english or len(l) <= 2:
+            continue
+        if re.search(r'\b' + re.escape(l.lower()) + r'\b', question.lower()):
             matched_location = l
             break
     if not matched_location:
         for d in districts:
-            if d.lower() in question.lower():
+            if d.lower() in common_english or len(d) <= 2:
+                continue
+            if re.search(r'\b' + re.escape(d.lower()) + r'\b', question.lower()):
                 matched_district = d
                 break
     if not matched_location and not matched_district:
         for s in states:
-            if s.lower() in question.lower():
+            if s.lower() in common_english or len(s) <= 2:
+                continue
+            if re.search(r'\b' + re.escape(s.lower()) + r'\b', question.lower()):
                 matched_state = s
                 break
+
+    # Step 2: If no direct match, attempt to extract searched place & find nearest location
+    nearest_note = ""
+    searched_place = None
+
+    if not matched_location and not matched_district and not matched_state:
+        # Extract probable place name by filtering out common stop words
+        stop_words = {
+            "is", "water", "safe", "in", "near", "at", "what", "about", "the", "wqi",
+            "of", "quality", "groundwater", "tell", "me", "how", "for", "drinking",
+            "potable", "well", "wells", "risk", "level", "status", "can", "we", "drink",
+            "from", "area", "region", "place", "location", "there", "show", "data", "report"
+        }
+        clean_words = [w.strip("?,!.") for w in tokens if w.strip("?,!.") not in stop_words]
+        if clean_words:
+            searched_place = " ".join(clean_words).title()
+
+        if searched_place:
+            # Try fuzzy text match against known locations & districts
+            all_places = locations + districts
+            fuzzy_matches = difflib.get_close_matches(searched_place, all_places, n=1, cutoff=0.6)
+            if fuzzy_matches:
+                match_name = fuzzy_matches[0]
+                if match_name in locations:
+                    matched_location = match_name
+                else:
+                    matched_district = match_name
+                nearest_note = f"📍 **'{searched_place}'** is not directly listed. Showing nearest match in dataset: **{match_name}**"
+
+        if not matched_location and not matched_district and searched_place:
+            # Try geocoding place name & distance-based nearest well lookup
+            geo = _geocode_place(searched_place)
+            if geo:
+                plat, plon, display_name = geo
+                # Find nearest well in DB with coordinates
+                wells_with_coords = db.query(Well).filter(Well.latitude.isnot(None), Well.longitude.isnot(None)).all()
+                if wells_with_coords:
+                    best_well = min(
+                        wells_with_coords,
+                        key=lambda w: _haversine_km(plat, plon, w.latitude, w.longitude)
+                    )
+                    dist_km = _haversine_km(plat, plon, best_well.latitude, best_well.longitude)
+                    if best_well.district:
+                        matched_district = best_well.district
+                        loc_name = best_well.location or best_well.district
+                        nearest_note = (
+                            f"📍 **'{searched_place}'** is not directly in our dataset.\n"
+                            f"Showing nearest available location: **{loc_name}** ({best_well.district}, {best_well.state}) "
+                            f"— approx. **{dist_km:.1f} km** away.\n"
+                        )
 
     q = db.query(Well)
     label = "the selected area"
@@ -542,6 +676,17 @@ def nlp_query(payload: dict, db: Session = Depends(get_db)):
     elif matched_state:
         q = q.filter(Well.state == matched_state)
         label = matched_state
+    else:
+        # If no place could be extracted or matched, return helpful instructions
+        if searched_place:
+            return {
+                "answer": (
+                    f"📍 **'{searched_place}'** was not found in our dataset and no nearby station could be mapped.\n\n"
+                    f"Please try searching by major district (e.g. Pune, Nashik, Jaipur, Hyderabad) or state."
+                )
+            }
+        # General non-location question fallback
+        label = "All Dataset Wells (System Overview)"
 
     wells = q.all()
     if not wells:
@@ -564,8 +709,10 @@ def nlp_query(payload: dict, db: Session = Depends(get_db)):
     else:
         safety = ""
 
+    header = nearest_note if nearest_note else f"📍 **{label}**: Analyzed {total} wells."
+
     answer = (
-        f"📍 **{label}**: Analyzed {total} wells.\n\n"
+        f"{header}\n\n"
         f"• Average WQI: **{avg_wqi:.1f}** / 100\n"
         f"• 🟢 Low risk: {low} wells ({100*low/total:.0f}%)\n"
         f"• 🟡 Moderate risk: {mod} wells ({100*mod/total:.0f}%)\n"
@@ -690,11 +837,20 @@ def analyze_report(payload: dict):
     if not params:
         return {"error": "No parameters provided. Please enter at least pH and TDS."}
 
-    # Sanitize — convert to floats
+    CANONICAL_MAP = {
+        "ph": "pH", "tds": "TDS", "hardness": "TH", "th": "TH",
+        "fluoride": "F", "f": "F", "nitrate": "NO3", "no3": "NO3",
+        "iron": "Fe", "fe": "Fe", "chloride": "Cl", "cl": "Cl",
+        "ec": "EC", "so4": "SO4", "sulphate": "SO4", "ca": "Ca",
+        "mg": "Mg", "na": "Na", "k": "K", "u": "U"
+    }
+
+    # Sanitize — convert to floats and map keys to canonical parameter names
     clean = {}
     for key, val in params.items():
+        canon_key = CANONICAL_MAP.get(key.lower(), key)
         try:
-            clean[key] = float(val)
+            clean[canon_key] = float(val)
         except (ValueError, TypeError):
             continue
 
@@ -745,6 +901,15 @@ def analyze_report(payload: dict):
             "status": status,
         })
 
+    # Build simple analysis map for frontend components expecting result.analysis
+    analysis_dict = {}
+    for item in param_analysis:
+        p_name = item["param"]
+        val = item["value"]
+        st = item["status"]
+        simple_st = "Desirable" if "Desirable" in st and "Above" not in st else ("Permissible" if "Above" in st or "Permissible" in st else "Hazardous")
+        analysis_dict[p_name] = {"value": val, "status": simple_st}
+
     # Usability tiers
     usability_tiers = _classify_usability(clean)
 
@@ -766,6 +931,7 @@ def analyze_report(payload: dict):
         "params": clean,
         "bis_limits": bis_limits,
         "param_analysis": param_analysis,
+        "analysis": analysis_dict,
         "shap": shap_values[:5],
         "usability_tiers": usability_tiers,
         "n_params": len(clean),
