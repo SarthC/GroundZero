@@ -4,6 +4,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine, LabelList,
 } from "recharts";
+import { FileDown } from "lucide-react";
+import { generateWellReportPDF } from "../utils/pdfReport";
 
 /* ─── Speedometer / Gauge ─── */
 function WQIGauge({ score, category }) {
@@ -212,6 +214,13 @@ export default function WQIDashboard({ wellDetail }) {
           </p>
           <p className="text-xs text-gray-500 mt-1">Year: {wellDetail.year}</p>
         </div>
+        <button
+          onClick={() => generateWellReportPDF(wellDetail)}
+          className="neu-btn w-full flex items-center justify-center gap-2 mt-4"
+        >
+          <FileDown size={16} strokeWidth={3} />
+          Download PDF Report
+        </button>
       </div>
 
       {/* Usability Classification */}
