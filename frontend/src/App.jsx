@@ -6,6 +6,7 @@ import WQIDashboard from "./components/WQIDashboard";
 import ForecastingWidget from "./components/ForecastingWidget";
 import ActionableIntelligence from "./components/ActionableIntelligence";
 import LabReportAnalyzer from "./components/LabReportAnalyzer";
+import PollutionTracer from "./components/PollutionTracer";
 import FlickeringGrid from "./components/FlickeringGrid";
 import { Droplets, Filter, RefreshCw } from "lucide-react";
 
@@ -77,6 +78,7 @@ export default function App() {
     { id: "map", label: "🗺️ Map & WQI" },
     { id: "forecast", label: "📈 Forecast" },
     { id: "intel", label: "🧠 Intelligence" },
+    { id: "tracer", label: "🏭 Pollution Tracer" },
     { id: "lab", label: "🧪 Lab Analyzer" },
   ];
 
@@ -243,6 +245,12 @@ export default function App() {
         {activeTab === "intel" && (
           <div className="animate-slide-up">
             <ActionableIntelligence />
+          </div>
+        )}
+
+        {activeTab === "tracer" && (
+          <div className="animate-slide-up">
+            <PollutionTracer />
           </div>
         )}
 

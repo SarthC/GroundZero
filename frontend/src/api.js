@@ -18,5 +18,6 @@ export const fetchDistricts = (state) => api.get(`/api/districts/${encodeURIComp
 export const postNlpQuery = (question) => api.post("/api/nlp", { question });
 export const postAnalyzeReport = (params) => api.post("/api/analyze-report", { params });
 export const fetchUsability = (wellId) => api.get(`/api/usability/${wellId}`);
+export const postPollutionTrace = (data) => api.post("/api/river-pollution-trace", data);
 
 export default api;

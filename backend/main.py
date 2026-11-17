@@ -1130,3 +1130,437 @@ def well_usability(well_db_id: int, db: Session = Depends(get_db)):
         "district": w.district,
         "tiers": tiers,
     }
+
+
+
+# ---------------------------------------------------------------------------
+# 7. River Pollution Source Tracer
+# ---------------------------------------------------------------------------
+
+# Mapping of degraded water-quality parameters to likely industrial sources
+POLLUTION_SOURCE_MAP = {
+    "NO3": [
+        ("Fertilizer Plant / Agricultural Processing", "🌾"),
+        ("Sewage Treatment Plant", "🚰"),
+        ("Food Processing Unit", "🏭"),
+    ],
+    "Fe": [
+        ("Steel / Iron Works / Foundry", "⚒️"),
+        ("Metal Processing Unit", "🏭"),
+        ("Mining Operation", "⛏️"),
+    ],
+    "Cl": [
+        ("Chemical Factory", "🧪"),
+        ("Paper / Pulp Mill", "📄"),
+        ("Textile Dyeing Unit", "🧵"),
+    ],
+    "SO4": [
+        ("Chemical / Pharmaceutical Plant", "🧪"),
+        ("Mining / Mineral Processing", "⛏️"),
+        ("Coal-fired Power Plant", "⚡"),
+    ],
+    "TDS": [
+        ("General Industrial Discharge", "🏭"),
+        ("Mining Operation", "⛏️"),
+        ("Tannery / Leather Works", "👞"),
+    ],
+    "F": [
+        ("Aluminum Smelter", "🏭"),
+        ("Glass / Ceramic Factory", "🏭"),
+        ("Phosphate Fertilizer Plant", "🌾"),
+    ],
+    "TH": [
+        ("Cement Factory", "🏗️"),
+        ("Mining / Quarry", "⛏️"),
+    ],
+    "pH": [
+        ("Chemical Plant (Acid/Alkali)", "🧪"),
+        ("Battery Manufacturing", "🔋"),
+        ("Mining (Acid Mine Drainage)", "⛏️"),
+    ],
+    "EC": [
+        ("Industrial Effluent Discharge", "🏭"),
+        ("Salt Processing", "🧂"),
+    ],
+    "PO4": [
+        ("Fertilizer Plant", "🌾"),
+        ("Sewage / Wastewater Treatment", "🚰"),
+        ("Food Processing Unit", "🍽️"),
+    ],
+    "Ca": [
+        ("Cement / Limestone Processing", "🏗️"),
+        ("Mining / Quarry", "⛏️"),
+    ],
+    "Mg": [
+        ("Refractory / Magnesium Processing", "🏭"),
+        ("Mining Operation", "⛏️"),
+    ],
+    "Na": [
+        ("Chemical / Soda Ash Plant", "🧪"),
+        ("Textile Processing", "🧵"),
+        ("Water Softening Plant", "🚰"),
+    ],
+}
+
+
+def _query_osm_industries(lat1: float, lon1: float, lat2: float, lon2: float, buffer_km: float = 5.0) -> list:
+    """
+    Query OpenStreetMap Overpass API for industrial facilities in the
+    corridor between two geographic points with a buffer zone.
+    Returns a list of industry dicts with name, type, coordinates, and distances.
+    """
+    # ~0.009 degrees ≈ 1 km at Indian latitudes
+    deg_buffer = buffer_km / 111.0
+
+    south = min(lat1, lat2) - deg_buffer
+    north = max(lat1, lat2) + deg_buffer
+    west = min(lon1, lon2) - deg_buffer
+    east = max(lon1, lon2) + deg_buffer
+
+    bbox = f"{south},{west},{north},{east}"
+
+    query = f"""
+    [out:json][timeout:15];
+    (
+      node["landuse"="industrial"]({bbox});
+      way["landuse"="industrial"]({bbox});
+      relation["landuse"="industrial"]({bbox});
+      node["man_made"="works"]({bbox});
+      way["man_made"="works"]({bbox});
+      node["building"="industrial"]({bbox});
+      way["building"="industrial"]({bbox});
+      node["industrial"]({bbox});
+      way["industrial"]({bbox});
+      node["craft"]({bbox});
+      way["craft"]({bbox});
+      node["power"="plant"]({bbox});
+      way["power"="plant"]({bbox});
+    );
+    out center tags;
+    """
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 GroundwaterIntelligenceApp/2.0 contact@groundwater.local"
+    }
+
+    try:
+        url = "https://overpass-api.de/api/interpreter"
+        data = urllib.parse.urlencode({"data": query}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers)
+        with urllib.request.urlopen(req, timeout=20.0) as resp:
+            result = json.loads(resp.read().decode())
+
+        industries = []
+        seen = set()
+
+        for element in result.get("elements", []):
+            tags = element.get("tags", {})
+
+            # Coordinates — use center for ways/relations
+            if element["type"] == "node":
+                elat, elon = element.get("lat"), element.get("lon")
+            else:
+                center = element.get("center", {})
+                elat, elon = center.get("lat"), center.get("lon")
+
+            if not elat or not elon:
+                continue
+
+            name = tags.get("name", tags.get("operator", "Unnamed Industrial Facility"))
+            type_label = _classify_industry_type(tags)
+
+            # Deduplicate by name + approximate location
+            dedup_key = f"{name}|{round(elat, 3)}|{round(elon, 3)}"
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            dist_upstream = _haversine_km(lat1, lon1, elat, elon)
+            dist_downstream = _haversine_km(lat2, lon2, elat, elon)
+
+            industries.append({
+                "name": name,
+                "type": type_label,
+                "lat": round(elat, 6),
+                "lng": round(elon, 6),
+                "distance_from_upstream_km": round(dist_upstream, 1),
+                "distance_from_downstream_km": round(dist_downstream, 1),
+            })
+
+        # Sort by distance from midpoint
+        mid_lat = (lat1 + lat2) / 2
+        mid_lon = (lon1 + lon2) / 2
+        industries.sort(key=lambda i: _haversine_km(mid_lat, mid_lon, i["lat"], i["lng"]))
+
+        return industries
+
+    except Exception as e:
+        print(f"[OSM] Overpass API error: {e}")
+        return []
+
+
+def _classify_industry_type(tags: dict) -> str:
+    """Classify an OSM element into a human-readable industry type label."""
+    industrial = tags.get("industrial", "").lower()
+    craft = tags.get("craft", "").lower()
+    man_made = tags.get("man_made", "").lower()
+    power = tags.get("power", "").lower()
+    landuse = tags.get("landuse", "").lower()
+    building = tags.get("building", "").lower()
+
+    type_map = {
+        "factory": "Factory",
+        "manufacturing": "Manufacturing Unit",
+        "warehouse": "Warehouse / Storage",
+        "chemical": "Chemical Plant",
+        "oil": "Oil / Petroleum Facility",
+        "slaughterhouse": "Slaughterhouse",
+        "mine": "Mining Operation",
+        "quarry": "Quarry",
+        "port": "Port / Dock",
+        "scrap_yard": "Scrap Yard",
+        "sawmill": "Sawmill",
+        "brewery": "Brewery",
+        "distillery": "Distillery",
+        "well": "Industrial Well",
+    }
+
+    for key, label in type_map.items():
+        if key in industrial or key in craft or key in man_made:
+            return label
+
+    if power == "plant":
+        return "Power Plant"
+    if man_made == "works":
+        return "Industrial Works"
+    if craft:
+        return f"Workshop ({craft.title()})"
+    if building == "industrial":
+        return "Industrial Building"
+    if landuse == "industrial":
+        return "Industrial Area"
+
+    return "Industrial Facility"
+
+
+def _infer_pollution_cause(upstream_params: dict, downstream_params: dict) -> dict:
+    """
+    Compare upstream vs downstream parameter values to identify which
+    parameters degraded, infer the most likely pollution sources, and
+    build a human-readable cause summary.
+    """
+    degraded_params = []
+    param_changes = {}
+
+    for param in ["pH", "TDS", "NO3", "Cl", "SO4", "F", "Fe", "TH", "EC", "Ca", "Mg", "Na", "PO4"]:
+        up_val = upstream_params.get(param)
+        down_val = downstream_params.get(param)
+        if up_val is None or down_val is None:
+            continue
+
+        change = down_val - up_val
+        pct_change = (change / max(abs(up_val), 0.01)) * 100
+
+        is_degraded = False
+        if param == "pH":
+            is_degraded = abs(change) > 0.5
+        else:
+            is_degraded = pct_change > 20
+
+        if is_degraded:
+            degraded_params.append(param)
+            param_changes[param] = {
+                "upstream": round(up_val, 2),
+                "downstream": round(down_val, 2),
+                "change": round(change, 2),
+                "pct_change": round(pct_change, 1),
+            }
+
+    # Collect likely industrial sources from degraded parameters
+    likely_sources = []
+    seen_sources = set()
+    for param in degraded_params:
+        for source_name, emoji in POLLUTION_SOURCE_MAP.get(param, []):
+            if source_name not in seen_sources:
+                seen_sources.add(source_name)
+                likely_sources.append({"name": source_name, "emoji": emoji})
+
+    # Severity classification
+    n = len(degraded_params)
+    if n >= 4:
+        severity = "Severe"
+    elif n >= 2:
+        severity = "Moderate"
+    elif n >= 1:
+        severity = "Mild"
+    else:
+        severity = "None"
+
+    # Build a natural-language cause summary
+    cause_summary = ""
+    if degraded_params:
+        pnames = {
+            "NO3": "Nitrate", "Fe": "Iron", "Cl": "Chloride", "SO4": "Sulphate",
+            "TDS": "Total Dissolved Solids", "F": "Fluoride", "TH": "Total Hardness",
+            "pH": "pH", "EC": "Electrical Conductivity", "Ca": "Calcium",
+            "Mg": "Magnesium", "Na": "Sodium", "PO4": "Phosphate",
+        }
+        labels = [pnames.get(p, p) for p in degraded_params[:3]]
+        cause_summary = f"Elevated {', '.join(labels)} suggest "
+        if "NO3" in degraded_params and "PO4" in degraded_params:
+            cause_summary += "fertilizer / agricultural runoff or sewage discharge"
+        elif "Fe" in degraded_params:
+            cause_summary += "metal processing or mining waste discharge"
+        elif "Cl" in degraded_params and "SO4" in degraded_params:
+            cause_summary += "chemical or textile industrial effluent"
+        elif "F" in degraded_params:
+            cause_summary += "aluminum smelting or ceramic/glass manufacturing waste"
+        elif "TDS" in degraded_params:
+            cause_summary += "general industrial discharge"
+        else:
+            cause_summary += "industrial or municipal waste discharge"
+
+    return {
+        "degraded_params": degraded_params,
+        "param_changes": param_changes,
+        "likely_sources": likely_sources,
+        "severity": severity,
+        "cause_summary": cause_summary,
+    }
+
+
+def _resolve_well(name: str, well_id: int, db: Session):
+    """Resolve a location to a Well object by ID, name match, or geocoding."""
+    if well_id:
+        return db.query(Well).filter(Well.id == well_id).first()
+
+    if not name:
+        return None
+
+    # Try exact location match
+    w = db.query(Well).filter(func.lower(Well.location) == name.lower()).first()
+    if w:
+        return w
+
+    # Try exact district match
+    w = db.query(Well).filter(func.lower(Well.district) == name.lower()).first()
+    if w:
+        return w
+
+    # Try exact state match
+    w = db.query(Well).filter(func.lower(Well.state) == name.lower()).first()
+    if w:
+        return w
+
+    # Geocode and find nearest monitoring station
+    geo = _geocode_place(name)
+    if geo:
+        plat, plon, _ = geo
+        # Progressive bounding box search
+        for delta in [0.3, 0.8, 2.0, 5.0]:
+            candidates = (
+                db.query(Well)
+                .filter(
+                    Well.latitude.between(plat - delta, plat + delta),
+                    Well.longitude.between(plon - delta, plon + delta),
+                )
+                .all()
+            )
+            if candidates:
+                return min(candidates, key=lambda w: _haversine_km(plat, plon, w.latitude, w.longitude))
+
+    return None
+
+
+@app.post("/api/river-pollution-trace")
+def river_pollution_trace(payload: dict, db: Session = Depends(get_db)):
+    """
+    Trace potential pollution sources between two river monitoring points.
+    Accepts upstream and downstream locations (by name or well ID),
+    compares water quality, and identifies industries in the corridor
+    via OpenStreetMap.
+    """
+    upstream_name = payload.get("upstream_name", "").strip()
+    downstream_name = payload.get("downstream_name", "").strip()
+    upstream_well_id = payload.get("upstream_well_id")
+    downstream_well_id = payload.get("downstream_well_id")
+    buffer_km = min(max(payload.get("buffer_km", 5.0), 1.0), 20.0)
+
+    # Resolve both locations
+    upstream_well = _resolve_well(upstream_name, upstream_well_id, db)
+    downstream_well = _resolve_well(downstream_name, downstream_well_id, db)
+
+    if not upstream_well:
+        return {"error": f"Could not find upstream location: '{upstream_name or upstream_well_id}'. Try a district or city name."}
+    if not downstream_well:
+        return {"error": f"Could not find downstream location: '{downstream_name or downstream_well_id}'. Try a district or city name."}
+    if upstream_well.id == downstream_well.id:
+        return {"error": "Both locations resolved to the same monitoring station. Please choose two different locations."}
+
+    # Collect parameters for each well
+    param_keys = ["pH", "TDS", "NO3", "Cl", "SO4", "F", "Fe", "TH", "EC", "Ca", "Mg", "Na", "PO4"]
+    up_params = {}
+    down_params = {}
+    for p in param_keys:
+        val = getattr(upstream_well, p, None)
+        if val is not None:
+            up_params[p] = float(val)
+        val = getattr(downstream_well, p, None)
+        if val is not None:
+            down_params[p] = float(val)
+
+    # Compute WQI for both endpoints
+    up_wqi, up_cat, up_risk = _compute_wqi(up_params)
+    down_wqi, down_cat, down_risk = _compute_wqi(down_params)
+
+    # Corridor distance
+    corridor_distance = _haversine_km(
+        upstream_well.latitude, upstream_well.longitude,
+        downstream_well.latitude, downstream_well.longitude,
+    )
+
+    # Analyse degradation between the two points
+    degradation = _infer_pollution_cause(up_params, down_params)
+    degradation["wqi_change"] = round(down_wqi - up_wqi, 2)
+    degradation["distance_km"] = round(corridor_distance, 1)
+
+    # Query OpenStreetMap for industries in the corridor
+    industries = _query_osm_industries(
+        upstream_well.latitude, upstream_well.longitude,
+        downstream_well.latitude, downstream_well.longitude,
+        buffer_km=buffer_km,
+    )
+
+    return {
+        "upstream": {
+            "well_id": upstream_well.id,
+            "name": upstream_well.location or upstream_well.district,
+            "district": upstream_well.district,
+            "state": upstream_well.state,
+            "lat": upstream_well.latitude,
+            "lng": upstream_well.longitude,
+            "wqi": up_wqi,
+            "category": up_cat,
+            "risk_level": up_risk,
+            "params": up_params,
+        },
+        "downstream": {
+            "well_id": downstream_well.id,
+            "name": downstream_well.location or downstream_well.district,
+            "district": downstream_well.district,
+            "state": downstream_well.state,
+            "lat": downstream_well.latitude,
+            "lng": downstream_well.longitude,
+            "wqi": down_wqi,
+            "category": down_cat,
+            "risk_level": down_risk,
+            "params": down_params,
+        },
+        "degradation": degradation,
+        "industries": industries[:30],
+        "corridor": {
+            "buffer_km": buffer_km,
+            "total_industries": len(industries),
+            "distance_km": round(corridor_distance, 1),
+        },
+    }
