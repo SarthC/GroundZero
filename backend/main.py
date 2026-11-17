@@ -537,9 +537,6 @@ def get_forecast(
 
 
 # ---------------------------------------------------------------------------
-# 3. NLP endpoint (keyword‑based demo)
-# ---------------------------------------------------------------------------
-
 # ---------------------------------------------------------------------------
 # 3. NLP endpoint (keyword‑based demo with nearest location resolution)
 # ---------------------------------------------------------------------------
@@ -556,137 +553,270 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _geocode_place(place_name: str):
-    """Geocode a place name using OpenStreetMap Nominatim API."""
+    """
+    Geocode a place name using OpenStreetMap Nominatim and Open-Meteo APIs
+    with India bias and browser-like user agent.
+    """
+    cleaned_name = place_name.strip()
+    if not cleaned_name:
+        return None
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GroundwaterIntelligenceApp/2.0 contact@groundwater.local"
+    }
+
+    # Strategy 1: Nominatim with India countrycode
     try:
-        url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(place_name)}&format=json&limit=1"
-        req = urllib.request.Request(url, headers={'User-Agent': 'GroundZero-App/1.0'})
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
+        url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(cleaned_name)}&countrycodes=in&format=json&limit=1"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=4.0) as resp:
             data = json.loads(resp.read().decode())
             if data and len(data) > 0:
-                return float(data[0]['lat']), float(data[0]['lon']), data[0].get('display_name', place_name)
-    except Exception as e:
-        print(f"[NLP Geocode Warning] {e}")
+                return float(data[0]["lat"]), float(data[0]["lon"]), data[0].get("display_name", cleaned_name)
+    except Exception:
+        pass
+
+    # Strategy 2: Nominatim with explicit ', India'
+    try:
+        url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(cleaned_name + ', India')}&format=json&limit=1"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=4.0) as resp:
+            data = json.loads(resp.read().decode())
+            if data and len(data) > 0:
+                return float(data[0]["lat"]), float(data[0]["lon"]), data[0].get("display_name", cleaned_name)
+    except Exception:
+        pass
+
+    # Strategy 3: Open-Meteo Geocoding API
+    try:
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(cleaned_name)}&count=1&country_code=IN&language=en&format=json"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            data = json.loads(resp.read().decode())
+            if data and "results" in data and data["results"]:
+                res = data["results"][0]
+                display_name = f"{res.get('name', cleaned_name)}, {res.get('admin1', '')}, India"
+                return float(res["latitude"]), float(res["longitude"]), display_name
+    except Exception:
+        pass
+
     return None
+
+
+def _format_param_line(param: str, value: float) -> str:
+    """Format a water quality parameter with unit and standard comparison."""
+    if value is None:
+        return ""
+    unit = "mg/L"
+    if param == "pH":
+        unit = ""
+    elif param == "EC":
+        unit = "µS/cm"
+
+    val_str = f"{value:.1f}".rstrip("0").rstrip(".") if isinstance(value, float) else str(value)
+    if unit:
+        val_str += f" {unit}"
+
+    des = BIS_DESIRABLE.get(param)
+    perm = BIS_PERMISSIBLE.get(param)
+
+    status = "✅ Normal"
+    if des:
+        if isinstance(des, tuple):
+            if not (des[0] <= value <= des[1]):
+                status = "⚠️ Out of desirable range (6.5–8.5)"
+            else:
+                status = "✅ Desirable (6.5–8.5)"
+        else:
+            if perm and value > perm:
+                status = f"🔴 Exceeded max limit ({perm})"
+            elif value > des:
+                status = f"🟡 Permissible (Desirable: {des}, Max: {perm})"
+            else:
+                status = f"✅ Desirable (Limit: {des})"
+
+    label_names = {
+        "pH": "pH",
+        "TDS": "Total Dissolved Solids (TDS)",
+        "F": "Fluoride (F)",
+        "NO3": "Nitrate (NO3)",
+        "TH": "Total Hardness (TH)",
+        "EC": "Electrical Conductivity (EC)",
+        "Cl": "Chloride (Cl)",
+        "SO4": "Sulphate (SO4)",
+        "Fe": "Iron (Fe)",
+        "Ca": "Calcium (Ca)",
+        "Mg": "Magnesium (Mg)",
+        "Na": "Sodium (Na)",
+        "K": "Potassium (K)",
+    }
+    label = label_names.get(param, param)
+    return f"• {label}: **{val_str}** — {status}"
+
+
+NLP_STOP_WORDS = {
+    "what", "where", "how", "why", "who", "which", "when",
+    "is", "are", "was", "were", "can", "could", "would", "should",
+    "do", "does", "did", "tell", "give", "show", "find", "get", "check",
+    "know", "fetch", "display", "provide", "see", "please", "kindly",
+    "the", "a", "an", "in", "at", "near", "of", "for", "to", "from",
+    "on", "about", "around", "by", "with", "and", "or",
+    "wqi", "water", "groundwater", "quality", "parameter", "parameters",
+    "value", "values", "score", "index", "reading", "readings", "level",
+    "levels", "data", "details", "info", "information", "report", "summary",
+    "stats", "statistics", "analysis", "trend", "trends",
+    "safe", "safety", "drink", "drinking", "potable", "drinkable", "usable",
+    "use", "irrigation", "domestic", "risk", "hazard", "danger",
+    "contamination", "contaminants", "polluted", "pollution",
+    "well", "wells", "borewell", "borewells", "tubewell", "tubewells",
+    "station", "stations", "place", "location", "locations", "area",
+    "areas", "region", "regions", "point", "points", "site", "sites",
+    "village", "city", "town", "district", "state", "its", "their",
+    "hey", "hi", "hello", "there", "thanks", "thank", "you", "me", "us", "we", "i"
+}
 
 
 @app.post("/api/nlp")
 def nlp_query(payload: dict, db: Session = Depends(get_db)):
     """
-    NLP query endpoint. Searches dataset for place/location. If exact location
-    is not in dataset, uses fuzzy text matching & geocoding distance to find
-    and analyze the nearest available location/well in the dataset.
+    NLP query endpoint for groundwater quality intelligence.
+    Extracts location name, checks exact dataset matches, and if not directly found,
+    geocodes the location to find and return water quality parameters from the
+    geographically nearest monitoring station.
     """
     question = payload.get("question", "").strip()
     if not question:
-        return {"answer": "Please ask a question about groundwater quality."}
+        return {"answer": "Please ask a question about groundwater quality or enter a location name (e.g. 'Kunjirwadi' or 'Pune')."}
 
-    tokens = question.lower().split()
+    q_lower = question.lower()
+    tokens = re.findall(r'[a-zA-Z0-9]+', q_lower)
 
-    # Load unique locations, districts, states
-    locations = [r[0] for r in db.query(distinct(Well.location)).all() if r[0]]
-    districts = [r[0] for r in db.query(distinct(Well.district)).all() if r[0]]
-    states = [r[0] for r in db.query(distinct(Well.state)).all() if r[0]]
+    # Check if user explicitly asked for national/system-wide overview
+    is_national_overview = any(
+        phrase in q_lower for phrase in [
+            "all wells", "across india", "whole india", "entire india",
+            "countrywide", "whole dataset", "system overview", "total wells"
+        ]
+    )
 
+    # Extract probable place name by filtering stop words
+    clean_words = [t for t in tokens if t not in NLP_STOP_WORDS]
+    searched_place = " ".join(clean_words).title() if clean_words else None
+
+    # Distinct check for direct database matches
     matched_location = None
     matched_district = None
     matched_state = None
 
-    # Step 1: Check exact word-boundary matches (ignoring common English stop words)
-    common_english = {"water", "is", "safe", "in", "near", "at", "what", "about", "the", "wqi", "of", "quality", "well", "wells"}
+    if searched_place:
+        # Check direct location match in DB
+        loc_row = db.query(Well.location).filter(func.lower(Well.location) == searched_place.lower()).first()
+        if loc_row and loc_row[0]:
+            matched_location = loc_row[0]
 
-    for l in locations:
-        if l.lower() in common_english or len(l) <= 2:
-            continue
-        if re.search(r'\b' + re.escape(l.lower()) + r'\b', question.lower()):
-            matched_location = l
-            break
-    if not matched_location:
-        for d in districts:
-            if d.lower() in common_english or len(d) <= 2:
-                continue
-            if re.search(r'\b' + re.escape(d.lower()) + r'\b', question.lower()):
-                matched_district = d
-                break
-    if not matched_location and not matched_district:
-        for s in states:
-            if s.lower() in common_english or len(s) <= 2:
-                continue
-            if re.search(r'\b' + re.escape(s.lower()) + r'\b', question.lower()):
-                matched_state = s
-                break
+        # Check direct district match
+        if not matched_location:
+            dist_row = db.query(Well.district).filter(func.lower(Well.district) == searched_place.lower()).first()
+            if dist_row and dist_row[0]:
+                matched_district = dist_row[0]
 
-    # Step 2: If no direct match, attempt to extract searched place & find nearest location
+        # Check direct state match
+        if not matched_location and not matched_district:
+            state_row = db.query(Well.state).filter(func.lower(Well.state) == searched_place.lower()).first()
+            if state_row and state_row[0]:
+                matched_state = state_row[0]
+
     nearest_note = ""
-    searched_place = None
+    is_nearest = False
 
-    if not matched_location and not matched_district and not matched_state:
-        # Extract probable place name by filtering out common stop words
-        stop_words = {
-            "is", "water", "safe", "in", "near", "at", "what", "about", "the", "wqi",
-            "of", "quality", "groundwater", "tell", "me", "how", "for", "drinking",
-            "potable", "well", "wells", "risk", "level", "status", "can", "we", "drink",
-            "from", "area", "region", "place", "location", "there", "show", "data", "report"
-        }
-        clean_words = [w.strip("?,!.") for w in tokens if w.strip("?,!.") not in stop_words]
-        if clean_words:
-            searched_place = " ".join(clean_words).title()
+    # Step 2: If no direct match and not a general overview, resolve nearest location via geocoding
+    if not matched_location and not matched_district and not matched_state and not is_national_overview:
+        if not searched_place:
+            return {
+                "answer": (
+                    "👋 Please enter a location name (e.g. **'Kunjirwadi'**, **'Pune'**, or **'Loni Kalbhor'**) "
+                    "to view its groundwater quality parameters and WQI risk score."
+                )
+            }
 
-        if searched_place:
-            # Try fuzzy text match against known locations & districts
-            all_places = locations + districts
-            fuzzy_matches = difflib.get_close_matches(searched_place, all_places, n=1, cutoff=0.6)
-            if fuzzy_matches:
-                match_name = fuzzy_matches[0]
-                if match_name in locations:
-                    matched_location = match_name
-                else:
-                    matched_district = match_name
-                nearest_note = f"📍 **'{searched_place}'** is not directly listed. Showing nearest match in dataset: **{match_name}**"
-
-        if not matched_location and not matched_district and searched_place:
-            # Try geocoding place name & distance-based nearest well lookup
-            geo = _geocode_place(searched_place)
-            if geo:
-                plat, plon, display_name = geo
-                # Find nearest well in DB with coordinates
-                wells_with_coords = db.query(Well).filter(Well.latitude.isnot(None), Well.longitude.isnot(None)).all()
-                if wells_with_coords:
-                    best_well = min(
-                        wells_with_coords,
-                        key=lambda w: _haversine_km(plat, plon, w.latitude, w.longitude)
+        # Attempt to geocode place name to (latitude, longitude)
+        geo = _geocode_place(searched_place)
+        if geo:
+            plat, plon, display_name = geo
+            # Query candidate wells using progressive bounding box for performance
+            candidates = []
+            for delta in [0.3, 0.8, 2.0, 5.0]:
+                candidates = (
+                    db.query(Well)
+                    .filter(
+                        Well.latitude.between(plat - delta, plat + delta),
+                        Well.longitude.between(plon - delta, plon + delta)
                     )
-                    dist_km = _haversine_km(plat, plon, best_well.latitude, best_well.longitude)
-                    if best_well.district:
-                        matched_district = best_well.district
-                        loc_name = best_well.location or best_well.district
-                        nearest_note = (
-                            f"📍 **'{searched_place}'** is not directly in our dataset.\n"
-                            f"Showing nearest available location: **{loc_name}** ({best_well.district}, {best_well.state}) "
-                            f"— approx. **{dist_km:.1f} km** away.\n"
-                        )
+                    .all()
+                )
+                if candidates:
+                    break
 
+            # Fallback to all wells with coords if bounding box yields nothing
+            if not candidates:
+                candidates = db.query(Well).filter(Well.latitude.isnot(None), Well.longitude.isnot(None)).all()
+
+            if candidates:
+                best_well = min(
+                    candidates,
+                    key=lambda w: _haversine_km(plat, plon, w.latitude, w.longitude)
+                )
+                dist_km = _haversine_km(plat, plon, best_well.latitude, best_well.longitude)
+                is_nearest = True
+                loc_name = best_well.location or f"{best_well.district} Station"
+
+                nearest_note = (
+                    f"📍 **'{searched_place}'** was not directly found in our monitoring dataset.\n"
+                    f"Showing water quality parameters from the nearest monitoring station: **{loc_name}** "
+                    f"({best_well.district}, {best_well.state}) — approx. **{dist_km:.1f} km** away."
+                )
+
+                if best_well.location:
+                    matched_location = best_well.location
+                else:
+                    matched_district = best_well.district
+        else:
+            # Check if any token matches an existing district in DB as fallback
+            for t in clean_words:
+                dist_check = db.query(Well.district).filter(func.lower(Well.district) == t.lower()).first()
+                if dist_check and dist_check[0]:
+                    matched_district = dist_check[0]
+                    nearest_note = f"📍 **'{searched_place}'** was not found directly. Showing monitoring data for **{matched_district} District**."
+                    break
+
+            if not matched_district:
+                return {
+                    "answer": (
+                        f"📍 Location **'{searched_place}'** was not found in our monitoring dataset, "
+                        f"and its geographic coordinates could not be resolved to find a nearby station.\n\n"
+                        f"Please check the spelling or try searching by major district (e.g. Pune, Nashik, Jaipur, Hyderabad) or nearby city."
+                    )
+                }
+
+    # Step 3: Fetch monitoring data
     q = db.query(Well)
     label = "the selected area"
+
     if matched_location:
         q = q.filter(Well.location == matched_location)
         label = matched_location
     elif matched_district:
         q = q.filter(Well.district == matched_district)
-        label = matched_district
+        label = f"{matched_district} District"
     elif matched_state:
         q = q.filter(Well.state == matched_state)
         label = matched_state
+    elif is_national_overview:
+        label = "All Dataset Wells (National Overview)"
     else:
-        # If no place could be extracted or matched, return helpful instructions
-        if searched_place:
-            return {
-                "answer": (
-                    f"📍 **'{searched_place}'** was not found in our dataset and no nearby station could be mapped.\n\n"
-                    f"Please try searching by major district (e.g. Pune, Nashik, Jaipur, Hyderabad) or state."
-                )
-            }
-        # General non-location question fallback
-        label = "All Dataset Wells (System Overview)"
+        return {
+            "answer": "Please ask a question about a specific location or groundwater quality."
+        }
 
     wells = q.all()
     if not wells:
@@ -696,30 +826,66 @@ def nlp_query(payload: dict, db: Session = Depends(get_db)):
     high = sum(1 for w in wells if w.risk_level == "High")
     mod = sum(1 for w in wells if w.risk_level == "Moderate")
     low = sum(1 for w in wells if w.risk_level == "Low")
-    avg_wqi = sum(w.wqi for w in wells if w.wqi) / max(1, sum(1 for w in wells if w.wqi))
+    valid_wqis = [w.wqi for w in wells if w.wqi is not None]
+    avg_wqi = sum(valid_wqis) / max(1, len(valid_wqis)) if valid_wqis else 50.0
 
-    # Check for safety question
-    if any(word in tokens for word in ["safe", "drink", "drinking", "potable"]):
-        if high / max(total, 1) > 0.3:
-            safety = "⚠️ Water in this area is NOT safe for drinking without treatment."
-        elif high / max(total, 1) > 0.1:
-            safety = "⚡ Some wells show elevated contamination — boiling or filtering recommended."
-        else:
-            safety = "✅ Water in most wells is generally safe for domestic use."
+    # Risk level & category
+    if avg_wqi <= 25:
+        category = "Excellent"
+    elif avg_wqi <= 50:
+        category = "Good"
+    elif avg_wqi <= 75:
+        category = "Poor"
+    elif avg_wqi <= 100:
+        category = "Very Poor"
     else:
-        safety = ""
+        category = "Unsuitable"
 
-    header = nearest_note if nearest_note else f"📍 **{label}**: Analyzed {total} wells."
+    if avg_wqi > 75:
+        risk_level = "High"
+        risk_emoji = "🔴"
+    elif avg_wqi > 50:
+        risk_level = "Moderate"
+        risk_emoji = "🟡"
+    else:
+        risk_level = "Low"
+        risk_emoji = "🟢"
 
-    answer = (
-        f"{header}\n\n"
-        f"• Average WQI: **{avg_wqi:.1f}** / 100\n"
-        f"• 🟢 Low risk: {low} wells ({100*low/total:.0f}%)\n"
-        f"• 🟡 Moderate risk: {mod} wells ({100*mod/total:.0f}%)\n"
-        f"• 🔴 High risk: {high} wells ({100*high/total:.0f}%)\n"
-    )
-    if safety:
-        answer += f"\n{safety}"
+    # Compute key chemical and physical parameter averages/values
+    param_keys = ["pH", "TDS", "F", "NO3", "TH", "EC", "Cl", "SO4", "Fe", "Ca", "Mg", "U", "As_"]
+    params_summary = {}
+
+    # If nearest station has multiple records, prefer latest year for parameters
+    sorted_wells = sorted(wells, key=lambda w: (w.year or 0), reverse=True)
+    for p in param_keys:
+        p_attr = p if p != "As_" else "As_"
+        vals = [getattr(w, p_attr) for w in sorted_wells if getattr(w, p_attr, None) is not None]
+        if vals:
+            params_summary[p.replace("As_", "As")] = vals[0] if is_nearest else (sum(vals) / len(vals))
+
+    header = nearest_note if nearest_note else f"📍 **{label}**: Analyzed {total} monitoring observation{'s' if total != 1 else ''}."
+
+    answer = f"{header}\n\n"
+    answer += f"• Water Quality Index (WQI): **{avg_wqi:.1f}** / 100 — **{category}** ({risk_emoji} {risk_level} Risk)\n"
+    answer += f"• Usability: {_usability_label(avg_wqi, risk_level)}\n"
+
+    if total > 1 and not is_nearest:
+        answer += f"• Risk Distribution: 🟢 {low} Low | 🟡 {mod} Moderate | 🔴 {high} High\n"
+
+    if params_summary:
+        answer += "\n🔬 **Key Water Quality Parameters:**\n"
+        for p, val in params_summary.items():
+            line = _format_param_line(p, val)
+            if line:
+                answer += f"{line}\n"
+
+    # Health & Safety advisory
+    if risk_level == "High" or (high / max(total, 1) > 0.3):
+        answer += "\n⚠️ **Safety Advisory**: Water in this area shows elevated contamination — filtration or lab testing strongly advised before drinking."
+    elif risk_level == "Moderate" or (high / max(total, 1) > 0.1):
+        answer += "\n⚡ **Safety Advisory**: Moderate mineral content / hardness. Safe for domestic & irrigation use; purification recommended for drinking."
+    else:
+        answer += "\n✅ **Safety Advisory**: Water parameters are generally within standard limits and safe for domestic and drinking use."
 
     return {"answer": answer}
 
