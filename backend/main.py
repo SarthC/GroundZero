@@ -1429,10 +1429,28 @@ def _infer_pollution_cause(upstream_params: dict, downstream_params: dict) -> di
     }
 
 
-def _resolve_well(name: str, well_id: int, db: Session):
-    """Resolve a location to a Well object by ID, name match, or geocoding."""
+def _resolve_well(name: str, well_id: int, lat: float = None, lng: float = None, db: Session = None):
+    """Resolve a location to a Well object by ID, exact/fuzzy name, or coordinates."""
     if well_id:
         return db.query(Well).filter(Well.id == well_id).first()
+
+    if lat is not None and lng is not None:
+        # Find the geographically nearest monitoring well to the clicked coordinates
+        for delta in [0.3, 0.8, 2.0, 5.0]:
+            candidates = (
+                db.query(Well)
+                .filter(
+                    Well.latitude.between(lat - delta, lat + delta),
+                    Well.longitude.between(lng - delta, lng + delta),
+                )
+                .all()
+            )
+            if candidates:
+                return min(candidates, key=lambda w: _haversine_km(lat, lng, w.latitude, w.longitude))
+        # Fallback to nearest among all with coords
+        all_wells = db.query(Well).filter(Well.latitude.isnot(None), Well.longitude.isnot(None)).all()
+        if all_wells:
+            return min(all_wells, key=lambda w: _haversine_km(lat, lng, w.latitude, w.longitude))
 
     if not name:
         return None
@@ -1484,11 +1502,30 @@ def river_pollution_trace(payload: dict, db: Session = Depends(get_db)):
     downstream_name = payload.get("downstream_name", "").strip()
     upstream_well_id = payload.get("upstream_well_id")
     downstream_well_id = payload.get("downstream_well_id")
+    upstream_coords = payload.get("upstream_coords")  # dict e.g. {"lat": 18.5, "lng": 73.8}
+    downstream_coords = payload.get("downstream_coords")
     buffer_km = min(max(payload.get("buffer_km", 5.0), 1.0), 20.0)
 
+    up_lat = upstream_coords.get("lat") if upstream_coords else None
+    up_lng = upstream_coords.get("lng") if upstream_coords else None
+    down_lat = downstream_coords.get("lat") if downstream_coords else None
+    down_lng = downstream_coords.get("lng") if downstream_coords else None
+
     # Resolve both locations
-    upstream_well = _resolve_well(upstream_name, upstream_well_id, db)
-    downstream_well = _resolve_well(downstream_name, downstream_well_id, db)
+    upstream_well = _resolve_well(
+        name=upstream_name,
+        well_id=upstream_well_id,
+        lat=up_lat,
+        lng=up_lng,
+        db=db,
+    )
+    downstream_well = _resolve_well(
+        name=downstream_name,
+        well_id=downstream_well_id,
+        lat=down_lat,
+        lng=down_lng,
+        db=db,
+    )
 
     if not upstream_well:
         return {"error": f"Could not find upstream location: '{upstream_name or upstream_well_id}'. Try a district or city name."}

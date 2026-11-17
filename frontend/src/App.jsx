@@ -250,7 +250,7 @@ export default function App() {
 
         {activeTab === "tracer" && (
           <div className="animate-slide-up">
-            <PollutionTracer />
+            <PollutionTracer wells={wells} />
           </div>
         )}
 
